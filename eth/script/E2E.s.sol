@@ -26,7 +26,14 @@ contract E2E is Script {
         vm.startBroadcast();
         BadBridge bridge = BadBridge(vm.envOr("BRIDGE", address(0)));
         if (address(bridge) == address(0)) {
-            bridge = new BadBridge(ROUTER, "cosmoshub-0", vm.envBytes32("ESCROW"), "ipfs://bad-bridge-test/");
+            bridge = new BadBridge(
+                ROUTER,
+                "cosmoshub-0",
+                vm.envBytes32("ESCROW"),
+                vm.envOr("NAME", string("Bad Bridge Test")),
+                vm.envOr("SYMBOL", string("BBT")),
+                vm.envOr("BASE_URI", string("ipfs://bad-bridge-test/"))
+            );
         }
         bridge.submitBatch(uint64(vm.envUint("HEIGHT")), cs, proof);
         bridge.claim(tokenId);

@@ -58,8 +58,15 @@ contract BadBridge is ERC721 {
     error BadPath(uint256 index);
     error NotProven(uint32 tokenId);
 
-    constructor(IRouter router, string memory clientId_, bytes32 escrow, string memory baseURI_)
-        ERC721("Bad Bridge Test", "BBT")
+    constructor(
+        IRouter router,
+        string memory clientId_,
+        bytes32 escrow,
+        string memory name_,
+        string memory symbol_,
+        string memory baseURI_
+    )
+        ERC721(name_, symbol_)
     {
         ROUTER = router;
         clientId = clientId_;
@@ -97,8 +104,9 @@ contract BadBridge is ERC721 {
     function claim(uint32 tokenId) external {
         address to = proven[tokenId];
         if (to == address(0)) revert NotProven(tokenId);
-        // _safeMint reverts if the token exists, so a second claim can't mint twice
-        _safeMint(to, tokenId);
+        // _mint reverts if the token exists, so a second claim can't mint twice. Not _safeMint:
+        // a recipient contract without onERC721Received would strand the kid forever.
+        _mint(to, tokenId);
     }
 
     /// @dev Whole attack surface. Path must be exactly ["wasm", 0x03 || ESCROW || "b" || u32 BE] with a 20-byte value.

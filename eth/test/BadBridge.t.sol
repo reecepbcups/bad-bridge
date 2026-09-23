@@ -16,7 +16,7 @@ contract BadBridgeTest is Test {
     BadBridge.ConsensusState cs;
 
     function setUp() public {
-        bridge = new BadBridge(IRouter(ROUTER), "cosmoshub-0", ESCROW, "ipfs://x/");
+        bridge = new BadBridge(IRouter(ROUTER), "cosmoshub-0", ESCROW, "Bad Kids", "BADKIDS", "ipfs://x/");
         cs = BadBridge.ConsensusState({ timestamp: 1, root: keccak256("root"), nextValidatorsHash: bytes32(0) });
 
         vm.mockCall(ROUTER, abi.encodeCall(IRouter.getClient, ("cosmoshub-0")), abi.encode(CLIENT));
@@ -55,6 +55,14 @@ contract BadBridgeTest is Test {
 
         vm.expectRevert();
         bridge.claim(7012);
+    }
+
+    function test_claimToContractWithoutReceiver() public {
+        // a multisig or plain contract must still receive the kid, _safeMint would revert here
+        address vault = address(new NoReceiver());
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", 1), abi.encodePacked(vault))));
+        bridge.claim(1);
+        assertEq(bridge.ownerOf(1), vault);
     }
 
     function test_parseRejects() public {
@@ -97,3 +105,5 @@ contract BadBridgeTest is Test {
         assertEq(id2, tokenId);
     }
 }
+
+contract NoReceiver { }

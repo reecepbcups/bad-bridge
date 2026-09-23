@@ -49,8 +49,19 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub enum QueryMsg {
     Record { token_id: u32 },
+    /// Bridged records in token id order, for the batcher.
+    Pending { start_after: Option<u32>, limit: Option<u32> },
     Config {},
 }
+
+#[cw_serde]
+pub struct PendingRecord {
+    pub token_id: u32,
+    pub eth_recipient: HexBinary,
+}
+
+const DEFAULT_LIMIT: u32 = 100;
+const MAX_LIMIT: u32 = 500;
 
 pub fn record_key(token_id: u32) -> Vec<u8> {
     let mut k = Vec::with_capacity(5);
@@ -92,14 +103,39 @@ pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg) -> 
         .add_attribute("eth_recipient", HexBinary::from(rcv.msg.as_slice()).to_hex()))
 }
 
+/// Only reachable while a contract admin exists, i.e. test deployments. Production is instantiated with no admin.
+#[entry_point]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: cosmwasm_std::Empty) -> StdResult<Response> {
+    Ok(Response::new())
+}
+
 #[entry_point]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Record { token_id } => {
             to_json_binary(&deps.storage.get(&record_key(token_id)).map(HexBinary::from))
         }
+        QueryMsg::Pending { start_after, limit } => to_json_binary(&pending(deps, start_after, limit)),
         QueryMsg::Config {} => to_json_binary(&CW721.load(deps.storage)?),
     }
+}
+
+fn pending(deps: Deps, start_after: Option<u32>, limit: Option<u32>) -> Vec<PendingRecord> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let start = start_after.map_or_else(|| vec![RECORD_PREFIX], |id| {
+        let mut k = record_key(id);
+        k.push(0); // exclusive of start_after
+        k
+    });
+    let end = vec![RECORD_PREFIX + 1];
+    deps.storage
+        .range(Some(&start), Some(&end), cosmwasm_std::Order::Ascending)
+        .take(limit)
+        .map(|(k, v)| PendingRecord {
+            token_id: u32::from_be_bytes(k[1..5].try_into().expect("record keys are 5 bytes")),
+            eth_recipient: HexBinary::from(v),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -152,6 +188,22 @@ mod tests {
         execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv("1", &[1; 20])).unwrap();
         let err = execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv("1", &[2; 20])).unwrap_err();
         assert_eq!(err, ContractError::AlreadyBridged(1));
+    }
+
+    #[test]
+    fn pending_pages_in_token_order() {
+        let (mut deps, cw721) = setup();
+        for id in ["5", "1", "7012", "3"] {
+            execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv(id, &[1; 20])).unwrap();
+        }
+        let ids = |start_after, limit| -> Vec<u32> {
+            pending(deps.as_ref(), start_after, limit).into_iter().map(|r| r.token_id).collect()
+        };
+        assert_eq!(ids(None, None), vec![1, 3, 5, 7012]);
+        assert_eq!(ids(Some(3), Some(1)), vec![5]);
+        assert_eq!(ids(Some(7012), None), Vec::<u32>::new());
+        // the config item must never show up as a record
+        assert!(pending(deps.as_ref(), None, None).iter().all(|r| r.eth_recipient.len() == 20));
     }
 
     #[test]
