@@ -23,6 +23,8 @@ pub enum ContractError {
     BadTokenId(String),
     #[error("recipient must be exactly 20 bytes, got {0}")]
     BadRecipient(usize),
+    #[error("recipient must not be the zero address")]
+    ZeroRecipient,
     #[error("token {0} already bridged")]
     AlreadyBridged(u32),
 }
@@ -85,10 +87,20 @@ pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg) -> 
     if info.sender != expected {
         return Err(ContractError::WrongCollection { expected });
     }
-    let token_id: u32 = rcv.token_id.parse().map_err(|_| ContractError::BadTokenId(rcv.token_id.clone()))?;
+    // "+7012" and "07012" also parse to 7012, only the canonical form may claim the slot
+    let token_id: u32 = rcv
+        .token_id
+        .parse()
+        .ok()
+        .filter(|id: &u32| id.to_string() == rcv.token_id)
+        .ok_or_else(|| ContractError::BadTokenId(rcv.token_id.clone()))?;
     // a malformed address strands the nft forever, so fail the send instead
     if rcv.msg.len() != 20 {
         return Err(ContractError::BadRecipient(rcv.msg.len()));
+    }
+    // BadBridge reads a zero recipient as unproven, so it could never be claimed
+    if rcv.msg.iter().all(|b| *b == 0) {
+        return Err(ContractError::ZeroRecipient);
     }
     let key = record_key(token_id);
     if deps.storage.get(&key).is_some() {
@@ -164,6 +176,9 @@ mod tests {
             ("ok", "7012", &eth, None),
             ("short recipient", "1", &other, Some(ContractError::BadRecipient(19))),
             ("non numeric id", "abc", &eth, Some(ContractError::BadTokenId("abc".into()))),
+            ("plus sign id", "+7012", &eth, Some(ContractError::BadTokenId("+7012".into()))),
+            ("leading zero id", "07012", &eth, Some(ContractError::BadTokenId("07012".into()))),
+            ("zero recipient", "1", &[0u8; 20], Some(ContractError::ZeroRecipient)),
         ];
         for (name, id, msg, want) in cases {
             let (mut deps, cw721) = setup();

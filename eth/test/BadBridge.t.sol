@@ -24,6 +24,23 @@ contract BadBridgeTest is Test {
         vm.mockCall(CLIENT, abi.encodeCall(ISP1ICS07Tendermint.MEMBERSHIP_PROGRAM_VKEY, ()), abi.encode(VKEY));
         vm.mockCall(CLIENT, abi.encodeCall(ISP1ICS07Tendermint.VERIFIER, ()), abi.encode(VERIFIER));
         vm.mockCall(VERIFIER, bytes(""), bytes(""));
+        mockFrozen(false);
+    }
+
+    function mockFrozen(bool frozen) internal {
+        vm.mockCall(
+            CLIENT,
+            abi.encodeCall(ISP1ICS07Tendermint.clientState, ()),
+            abi.encode(
+                "cosmoshub-4",
+                ISP1ICS07Tendermint.TrustThreshold(1, 3),
+                ISP1ICS07Tendermint.Height(4, HEIGHT),
+                uint32(1),
+                uint32(2),
+                frozen,
+                uint8(1)
+            )
+        );
     }
 
     function key(bytes32 escrow, bytes1 tag, uint32 tokenId) internal pure returns (bytes memory) {
@@ -93,6 +110,12 @@ contract BadBridgeTest is Test {
         other.root = keccak256("other");
         vm.expectRevert(BadBridge.BadConsensusState.selector);
         bridge.submitBatch(HEIGHT, other, proofFor(kv(key(ESCROW, "b", 1), abi.encodePacked(address(1)))));
+    }
+
+    function test_rejectsFrozenClient() public {
+        mockFrozen(true);
+        vm.expectRevert(BadBridge.ClientFrozen.selector);
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", 1), abi.encodePacked(address(1)))));
     }
 
     function testFuzz_parseOnlyAcceptsExactLayout(bytes calldata k, uint32 tokenId, address to) public view {

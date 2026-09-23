@@ -12,6 +12,28 @@ interface ISP1Verifier {
 }
 
 interface ISP1ICS07Tendermint {
+    struct TrustThreshold {
+        uint8 numerator;
+        uint8 denominator;
+    }
+
+    struct Height {
+        uint64 revisionNumber;
+        uint64 revisionHeight;
+    }
+
+    function clientState()
+        external
+        view
+        returns (
+            string memory chainId,
+            TrustThreshold memory trustLevel,
+            Height memory latestHeight,
+            uint32 trustingPeriod,
+            uint32 unbondingPeriod,
+            bool isFrozen,
+            uint8 zkAlgorithm
+        );
     function getConsensusStateHash(uint64 revisionHeight) external view returns (bytes32);
     function MEMBERSHIP_PROGRAM_VKEY() external view returns (bytes32);
     function VERIFIER() external view returns (ISP1Verifier);
@@ -52,6 +74,7 @@ contract BadBridge is ERC721 {
 
     event Proven(uint32 indexed tokenId, address indexed recipient);
 
+    error ClientFrozen();
     error BadConsensusState();
     error BadVKey();
     error RootMismatch();
@@ -81,6 +104,9 @@ contract BadBridge is ERC721 {
     /// @notice Records every escrow entry proven by `sp1Proof` at `proofHeight`. Anyone can call it.
     function submitBatch(uint64 proofHeight, ConsensusState calldata cs, SP1Proof calldata sp1Proof) external {
         ISP1ICS07Tendermint client = lightClient();
+        // getConsensusStateHash still answers on a frozen client, membership doesn't
+        (,,,,, bool isFrozen,) = client.clientState();
+        if (isFrozen) revert ClientFrozen();
         // anchor to the canonical client's stored root, same checks the client does for membership
         if (keccak256(abi.encode(cs)) != client.getConsensusStateHash(proofHeight)) revert BadConsensusState();
         if (sp1Proof.vKey != client.MEMBERSHIP_PROGRAM_VKEY()) revert BadVKey();
