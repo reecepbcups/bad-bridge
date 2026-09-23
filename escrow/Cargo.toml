@@ -1,0 +1,24 @@
+[package]
+name = "bad-bridge-escrow"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = "abort"
+incremental = false
+overflow-checks = true
+
+[dependencies]
+cosmwasm-std = "2.1"
+cosmwasm-schema = "2.1"
+cw-storage-plus = "2.0"
+thiserror = "1"
