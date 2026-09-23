@@ -2,8 +2,8 @@
 
 **A one-way, opt-in exit door for Bad Kids: Cosmos Hub to Ethereum, secured by SP1.**
 
-Status: design draft, revision 3
-Verdict: feasible. Every load-bearing assumption has now been verified against source or on-chain deployment data, and the spike (section 9) passed on mainnet data on 2026-09-23.
+Status: design draft, revision 4
+Verdict: feasible. Every load-bearing assumption has now been verified against source or on-chain deployment data, and the spike (section 9) passed on mainnet data on 2026-09-23. Same day, one test kid went Hub escrow -> SP1 proof -> mint on Ethereum mainnet end to end (section 9).
 
 ---
 
@@ -222,6 +222,15 @@ pub enum QueryMsg {
 
 Recommendation: **hold**, with `admin: None` making it functionally equivalent to a burn. The NFTs sit in a contract that cannot release them and cannot be upgraded to release them. Same finality, better optics, and it leaves governance a path to build a return leg later without having destroyed anything.
 
+### Actual (`escrow/src/lib.rs`)
+
+213 lines including tests. Matches the design, with a few small differences:
+
+- The cw721 address lives in a `cw-storage-plus` `Item` under key `"cw721"`. It can't collide with records because it doesn't start with `b`.
+- `Cw721ReceiveMsg` is inlined, so we don't pin a cw721 version.
+- Added a `Config {}` query. `Pending` caps at 500 per page.
+- There's a no-op `migrate` entry point so test deploys can be upgraded. Production still gets `admin: None`, so nobody can reach it.
+
 ---
 
 ## 5. Component 2: the batcher
@@ -272,6 +281,18 @@ The `membership` program reads a `u16` count and loops, accepting up to 65,535 K
 Use `uc-and-membership` instead of `membership` if you end up running your own client and want the update and the state proof in a single proof.
 
 Reference prover implementation to crib from: `packages/sp1-ics07-tendermint-prover` in `cosmos/ibc-contracts`. Submit with `--groth16`.
+
+### Actual (`batcher/service`)
+
+It's a Rust binary on `sp1-sdk` 6.1 (network prover, Groth16) and alloy. No crib from the reference prover was needed. Each tick it:
+
+1. Resolves the client through the bridge and bails if it's frozen
+2. Pages `Pending` over REST, then drops anything `proven` on Eth
+3. Runs `abci_query` at `H-1` across `HUB_RPCS` in order, and builds the `MerkleProof` protobuf by hand from the two `proofOps`
+4. Rebuilds `ConsensusState` from the header and checks it against `getConsensusStateHash(H)` before paying for a proof
+5. Proves up to `MAX_BATCH` (default 50) records and calls `submitBatch`
+
+On startup it refuses to run if the ELF vkey doesn't match `MEMBERSHIP_PROGRAM_VKEY`. It also handles records newer than `H`: they come back empty and wait for the next tick. `batcher/spike.sh`, `host/` and `verify/` are the section 9 spike tooling.
 
 ---
 
@@ -361,6 +382,19 @@ Skip any one of these and an attacker proves an arbitrary key from an arbitrary 
 - **Bridge is sole minter, ownership renounced.** ERC-2981 royalties, if any, immutable at deploy.
 - **Replay protection keyed on token ID**, not on batch or proof. A record can legitimately appear in multiple proofs if the batcher's pending-set bookkeeping drifts.
 
+### Actual (`eth/src/BadBridge.sol`)
+
+131 lines. It differs from the sketch above in these ways:
+
+- **No `claimed` mapping.** `_mint` already reverts on an existing token ID, so a second claim can't mint twice.
+- **`_mint`, not `_safeMint`.** If the recipient is a contract without `onERC721Received`, `_safeMint` would revert every time and strand the kid.
+- **No owner at all**, so there's nothing to renounce. There are no royalties either.
+- `_parse` is public `parse(kv, index)` and reverts with `BadPath(index)`. It checks `key.length == 38`, which covers the "exactly 4 bytes, nothing else" rule.
+- `clientId` is a constructor arg, and the client is resolved through `ROUTER.getClient` on every `submitBatch`.
+- A `Proven(tokenId, recipient)` event fires the first time a kid gets recorded.
+
+Tests in `eth/test/BadBridge.t.sol` cover submit + claim, a double claim, claiming to a contract with no receiver, `parse` rejects, a wrong root or vkey, and a fuzz run of `parse` against the exact layout.
+
 ---
 
 ## 7. Cost model
@@ -374,6 +408,8 @@ From the upstream end-to-end benchmarks:
 | `submitBatch` | ~230k + ~25k per kid recorded |
 | `claim` | ~80k gas |
 | `updateClient` | zero, inherited from Eureka |
+
+Actual, mainnet 2026-09-23, 1 kid per batch: `submitBatch` **314,805**, `claim` **78,725**, deploy ~2.95M.
 
 The fixed ~230k plus prover fee applies per batch regardless of size. With opt-in trickle volume that overhead cannot be amortized on a schedule you control, which is exactly why the three-transaction split matters: whoever wants to go now pays the full fixed cost, everyone else waits and splits it.
 
@@ -418,13 +454,26 @@ Program built from `solidity-ibc-eureka` HEAD `0759094` with SP1 6.1. Heads up, 
 
 Then:
 
-1. Escrow contract plus unit tests, deployed to a Hub testnet
-2. Batcher, end to end against testnet, one record
-3. `BadBridge.sol` against a mocked client, then against the real mainnet client and a real historical root
-4. Fuzz `_parse` until it is boring
+1. ~~Escrow contract plus unit tests, deployed to a Hub testnet~~ Done, and it went straight to Hub mainnet
+2. ~~Batcher, end to end against testnet, one record~~ Done on mainnet, one record
+3. ~~`BadBridge.sol` against a mocked client, then against the real mainnet client and a real historical root~~ Done
+4. Fuzz `_parse` until it is boring. Started: there's one fuzz test, and it needs more runs and more cases
 5. Frontend, with the liquidity disclosure on the commit screen
 6. Audit, scoped to `_parse` and the escrow receive path
 7. Mainnet, ownership renounced, admin absent
+
+**E2E result (2026-09-23): works on mainnet.** A test escrow was proven at Hub height 33092173 (queried at `H-1` 33092172). Token 1 was minted to `0xd2c3...9775`, all through the real `cosmoshub-0` client and the real SP1 verifier.
+
+| What | Where |
+|-|-|
+| Test escrow (E2E) | `cosmos1ms0s7mmv53chsxnpjz9zkn9auv6nz5uaz6gu94gnz4a0mczkrq4sw2y99t` |
+| E2E BadBridge (Eth) | `0x4ff09a8097c5d4f90e4acfef1b21637a9e71f995` |
+| `submitBatch` tx | `0x0e73ea9c...c04c` |
+| `claim` tx | `0xc3fa2a97...cf8c` |
+| `Deploy.s.sol` BadBridge (`ReeceBadTest`) | `0xde185d7902340086cc4c37322584e246dc5ee198` |
+| its escrow | `cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv` |
+
+These are test deploys, not the real collection. `Deploy.s.sol` is the production script: no owner, and `ESCROW` comes from env.
 
 ---
 
