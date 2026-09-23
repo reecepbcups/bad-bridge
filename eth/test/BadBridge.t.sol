@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import { Test } from "forge-std/Test.sol";
 import { BadBridge, IRouter, ISP1ICS07Tendermint, ISP1Verifier } from "../src/BadBridge.sol";
 
-contract BadBridgeTest is Test {
+abstract contract BadBridgeBase is Test {
     address constant ROUTER = address(0x1001);
     address constant CLIENT = address(0x1002);
     address constant VERIFIER = address(0x1003);
@@ -15,7 +15,7 @@ contract BadBridgeTest is Test {
     BadBridge bridge;
     BadBridge.ConsensusState cs;
 
-    function setUp() public {
+    function setUp() public virtual {
         bridge = new BadBridge(IRouter(ROUTER), "cosmoshub-0", ESCROW, "Bad Kids", "BADKIDS", "ipfs://x/");
         cs = BadBridge.ConsensusState({ timestamp: 1, root: keccak256("root"), nextValidatorsHash: bytes32(0) });
 
@@ -61,6 +61,9 @@ contract BadBridgeTest is Test {
         return BadBridge.SP1Proof({ vKey: VKEY, publicValues: pv, proof: "" });
     }
 
+}
+
+contract BadBridgeTest is BadBridgeBase {
     function test_submitAndClaim() public {
         address alice = makeAddr("alice");
         bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", 7012), abi.encodePacked(alice))));
@@ -126,6 +129,160 @@ contract BadBridgeTest is Test {
         } catch { }
         (uint32 id2,) = bridge.parse(kv(key(ESCROW, "b", tokenId), abi.encodePacked(to)), 0);
         assertEq(id2, tokenId);
+    }
+
+    function testFuzz_parseMutatedKey(uint32 tokenId, address to, uint8 pos, uint8 flip) public {
+        vm.assume(flip != 0);
+        bytes memory k = key(ESCROW, "b", tokenId);
+        uint256 i = uint256(pos) % k.length;
+        k[i] = k[i] ^ bytes1(flip);
+        // only the 4 token id bytes may change, and then they decode as a different id
+        if (i < 34) {
+            vm.expectRevert(abi.encodeWithSelector(BadBridge.BadPath.selector, 0));
+            bridge.parse(kv(k, abi.encodePacked(to)), 0);
+        } else {
+            (uint32 id,) = bridge.parse(kv(k, abi.encodePacked(to)), 0);
+            assertTrue(id != tokenId);
+        }
+    }
+
+    function testFuzz_parseRejectsKeyLength(uint32 tokenId, uint8 len) public {
+        vm.assume(len != 38);
+        bytes memory full = abi.encodePacked(key(ESCROW, "b", tokenId), new bytes(256));
+        bytes memory k = new bytes(len);
+        for (uint256 i = 0; i < len; ++i) {
+            k[i] = full[i];
+        }
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.BadPath.selector, 0));
+        bridge.parse(kv(k, abi.encodePacked(address(1))), 0);
+    }
+
+    function testFuzz_parseRejectsValueLength(uint32 tokenId, bytes calldata value) public {
+        vm.assume(value.length != 20);
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.BadPath.selector, 0));
+        bridge.parse(kv(key(ESCROW, "b", tokenId), value), 0);
+    }
+
+    function testFuzz_parseRejectsStore(bytes calldata store, uint8 pathLen) public {
+        BadBridge.KVPair memory p = kv(key(ESCROW, "b", 1), abi.encodePacked(address(1)));
+        if (keccak256(store) != keccak256("wasm")) {
+            p.path[0] = store;
+            vm.expectRevert(abi.encodeWithSelector(BadBridge.BadPath.selector, 0));
+            bridge.parse(p, 0);
+        }
+        pathLen = uint8(bound(pathLen, 0, 7));
+        if (pathLen == 2) return;
+        BadBridge.KVPair memory q;
+        q.path = new bytes[](pathLen);
+        for (uint256 i = 0; i < pathLen; ++i) {
+            q.path[i] = i == 0 ? bytes("wasm") : key(ESCROW, "b", 1);
+        }
+        q.value = abi.encodePacked(address(1));
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.BadPath.selector, 0));
+        bridge.parse(q, 0);
+    }
+
+    function testFuzz_firstRecordWins(uint32 tokenId, address first, address second) public {
+        vm.assume(first != address(0) && second != address(0) && first != second);
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", tokenId), abi.encodePacked(first))));
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", tokenId), abi.encodePacked(second))));
+        assertEq(bridge.proven(tokenId), first);
+
+        bridge.claim(tokenId);
+        assertEq(bridge.ownerOf(tokenId), first);
+        vm.expectRevert();
+        bridge.claim(tokenId);
+    }
+
+    function testFuzz_badPairRevertsWholeBatch(uint32 goodId, uint32 badId, uint8 badAt) public {
+        BadBridge.KVPair[] memory kvs = new BadBridge.KVPair[](3);
+        uint256 at = uint256(badAt) % kvs.length;
+        for (uint256 i = 0; i < kvs.length; ++i) {
+            kvs[i] = i == at
+                ? kv(key(bytes32(uint256(0xbad)), "b", badId), abi.encodePacked(address(2)))
+                : kv(key(ESCROW, "b", goodId), abi.encodePacked(address(1)));
+        }
+        bytes memory pv = abi.encode(BadBridge.MembershipOutput({ commitmentRoot: cs.root, kvPairs: kvs }));
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.BadPath.selector, at));
+        bridge.submitBatch(HEIGHT, cs, BadBridge.SP1Proof({ vKey: VKEY, publicValues: pv, proof: "" }));
+        assertEq(bridge.proven(goodId), address(0));
+    }
+
+    function testFuzz_unprovenCantClaim(uint32 tokenId) public {
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.NotProven.selector, tokenId));
+        bridge.claim(tokenId);
+    }
+}
+
+/// Drives random batches and claims so the invariants below run against many states.
+contract Handler is Test {
+    BadBridge public bridge;
+    bytes32 root;
+    bytes32 escrow;
+    uint32[] public ids;
+    mapping(uint32 => address) public firstSeen;
+    mapping(uint32 => bool) public minted;
+
+    constructor(BadBridge bridge_, bytes32 root_, bytes32 escrow_) {
+        bridge = bridge_;
+        root = root_;
+        escrow = escrow_;
+    }
+
+    function submit(uint32 tokenId, address to) external {
+        tokenId = uint32(bound(tokenId, 1, 50));
+        if (to == address(0)) to = address(1);
+        BadBridge.KVPair[] memory kvs = new BadBridge.KVPair[](1);
+        kvs[0].path = new bytes[](2);
+        kvs[0].path[0] = "wasm";
+        kvs[0].path[1] = abi.encodePacked(bytes1(0x03), escrow, bytes1("b"), tokenId);
+        kvs[0].value = abi.encodePacked(to);
+        bytes memory pv = abi.encode(BadBridge.MembershipOutput({ commitmentRoot: root, kvPairs: kvs }));
+        bridge.submitBatch(
+            100,
+            BadBridge.ConsensusState({ timestamp: 1, root: root, nextValidatorsHash: bytes32(0) }),
+            BadBridge.SP1Proof({ vKey: bytes32(uint256(0x0bd8ec)), publicValues: pv, proof: "" })
+        );
+        if (firstSeen[tokenId] == address(0)) {
+            firstSeen[tokenId] = to;
+            ids.push(tokenId);
+        }
+    }
+
+    function claim(uint256 seed) external {
+        if (ids.length == 0) return;
+        uint32 tokenId = ids[seed % ids.length];
+        // a proven kid must always be claimable once, and only once
+        if (minted[tokenId]) {
+            vm.expectRevert();
+            bridge.claim(tokenId);
+        } else {
+            bridge.claim(tokenId);
+            minted[tokenId] = true;
+        }
+    }
+
+    function idsLength() external view returns (uint256) {
+        return ids.length;
+    }
+}
+
+contract BadBridgeInvariantTest is BadBridgeBase {
+    Handler handler;
+
+    function setUp() public override {
+        super.setUp();
+        handler = new Handler(bridge, cs.root, ESCROW);
+        targetContract(address(handler));
+    }
+
+    /// A recorded recipient never changes and a minted kid always sits with it (nobody transfers in this run).
+    function invariant_recordsStickAndMintsMatch() public view {
+        for (uint256 i = 0; i < handler.idsLength(); ++i) {
+            uint32 id = handler.ids(i);
+            assertEq(bridge.proven(id), handler.firstSeen(id));
+            if (handler.minted(id)) assertEq(bridge.ownerOf(id), handler.firstSeen(id));
+        }
     }
 }
 

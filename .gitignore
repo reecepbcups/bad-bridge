@@ -3,3 +3,4 @@ target/
 eth/cache/
 eth/out/
 eth/broadcast/
+spec/_apalache-out/

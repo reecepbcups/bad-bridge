@@ -222,6 +222,27 @@ mod tests {
     }
 
     #[test]
+    fn only_canonical_token_ids() {
+        let (mut deps, cw721) = setup();
+        // xorshift, deterministic without pulling in a rand dep
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..2000 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let id = seed as u32;
+            for bad in [format!("+{id}"), format!("0{id}"), format!("00{id}"), format!(" {id}"), format!("{id} ")] {
+                let err = execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv(&bad, &[1; 20])).unwrap_err();
+                assert_eq!(err, ContractError::BadTokenId(bad));
+            }
+            // skip the rare repeat so AlreadyBridged doesn't mask the check
+            if deps.storage.get(&record_key(id)).is_none() {
+                execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv(&id.to_string(), &[1; 20])).unwrap();
+            }
+        }
+    }
+
+    #[test]
     fn record_key_layout() {
         assert_eq!(record_key(7012), vec![b'b', 0x00, 0x00, 0x1b, 0x64]);
     }
