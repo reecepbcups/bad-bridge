@@ -1,0 +1,14 @@
+# Single-package workspace; this file only holds pnpm settings.
+overrides:
+  # cosmwasm-stargate is now a re-export shim of @cosmjs/cosmwasm pinned to ^0.38. Point it at
+  # 0.39 so graz and our code share one copy of @cosmjs/stargate.
+  "@cosmjs/cosmwasm-stargate>@cosmjs/cosmwasm": 0.39.0
+  # @scure/base >=2.3 rejects the `limit = Infinity` default that cosmjs' fromBech32 passes, so every
+  # fromBech32(addr) call throws "limit: expected safe integer". 2.2.0 is the last version that works.
+  "@cosmjs/encoding>@scure/base": 2.2.0
+# Native Node addons and a version-check postinstall. The browser build uses JS fallbacks.
+ignoredBuiltDependencies:
+  - bufferutil
+  - keccak
+  - protobufjs
+  - utf-8-validate

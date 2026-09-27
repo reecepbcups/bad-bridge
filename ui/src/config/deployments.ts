@@ -1,0 +1,172 @@
+import type { Address } from 'viem'
+
+export type DeploymentId = 'reece-test' | 'badkids' | 'demo'
+
+/** Cosmos Hub side of a deployment. */
+export interface HubConfig {
+  /** Chain id, e.g. cosmoshub-4. */
+  chainId: string
+  /** Human name for wallet prompts. */
+  chainName: string
+  /** Account address prefix. */
+  bech32Prefix: string
+  /** REST (LCD) endpoints, tried in order. */
+  rest: readonly string[]
+  /** CometBFT RPC endpoints, tried in order. Also the tx_search fallback. */
+  rpc: readonly string[]
+  /** The cw721 the escrow accepts. */
+  cw721: string
+  /** Escrow contract. null means not deployed yet. */
+  escrow: string | null
+  /** Fee denom. */
+  gasDenom: string
+  /** Average block time, for "Ethereum is N min behind". */
+  blockSeconds: number
+}
+
+/** Ethereum side of a deployment. */
+export interface EthConfig {
+  /** 1 for mainnet. */
+  chainId: number
+  /** JSON-RPC endpoints, tried in order. */
+  rpc: readonly string[]
+  /** BadBridge ERC721. null means not deployed yet. */
+  bridge: Address | null
+  /** Multicall3, for batched reads and claim-many. */
+  multicall3: Address
+  /** Eureka's cosmoshub-0 light client today. Display only: the bridge resolves it through the router live. */
+  lightClient: Address
+}
+
+/** Link builders. Every link the app shows goes through one of these. */
+export interface Explorers {
+  hubTx(hash: string): string
+  hubAccount(address: string): string
+  hubContract(address: string): string
+  ethTx(hash: string): string
+  ethAddress(address: string): string
+  /** Etherscan page for one bridged kid. null until the bridge exists. */
+  ethToken(tokenId: number): string | null
+  /** OpenSea page for one bridged kid. null until the bridge exists. */
+  opensea(tokenId: number): string | null
+}
+
+export interface Deployment {
+  id: DeploymentId
+  /** Shown in copy, e.g. "Bad Kids". */
+  collectionName: string
+  /** True for the in-memory demo adapter (no network at all). */
+  demo: boolean
+  hub: HubConfig
+  eth: EthConfig
+  explorer: Explorers
+  /** The bridge's source code, linked from About and the stuck-batcher note. */
+  sourceUrl: string
+}
+
+const HUB_REST = ['https://cosmos-rest.publicnode.com'] as const
+const HUB_RPC = [
+  'https://cosmos-rpc.polkachu.com',
+  'https://cosmos-rpc.publicnode.com',
+  'https://cosmoshub.rpc.kjnodes.com',
+] as const
+const ETH_RPC = ['https://ethereum-rpc.publicnode.com'] as const
+const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
+const EUREKA_CLIENT: Address = '0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9'
+
+function explorers(bridge: Address | null): Explorers {
+  return {
+    hubTx: (hash) => `https://www.mintscan.io/cosmos/tx/${hash}`,
+    hubAccount: (address) => `https://www.mintscan.io/cosmos/address/${address}`,
+    hubContract: (address) => `https://www.mintscan.io/cosmos/wasm/contract/${address}`,
+    ethTx: (hash) => `https://etherscan.io/tx/${hash}`,
+    ethAddress: (address) => `https://etherscan.io/address/${address}`,
+    ethToken: (tokenId) => (bridge ? `https://etherscan.io/nft/${bridge}/${tokenId}` : null),
+    opensea: (tokenId) => (bridge ? `https://opensea.io/assets/ethereum/${bridge}/${tokenId}` : null),
+  }
+}
+
+function hub(cw721: string, escrow: string | null): HubConfig {
+  return {
+    chainId: 'cosmoshub-4',
+    chainName: 'Cosmos Hub',
+    bech32Prefix: 'cosmos',
+    rest: HUB_REST,
+    rpc: HUB_RPC,
+    cw721,
+    escrow,
+    gasDenom: 'uatom',
+    blockSeconds: 6,
+  }
+}
+
+function eth(bridge: Address | null): EthConfig {
+  return { chainId: 1, rpc: ETH_RPC, bridge, multicall3: MULTICALL3, lightClient: EUREKA_CLIENT }
+}
+
+const SOURCE = 'https://github.com/reecepbcups/bad-bridge'
+
+const REECE_TEST_BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
+
+/** Mainnet test collection: #2 and #3 already bridged, #1 still on the Hub. */
+const reeceTest: Deployment = {
+  id: 'reece-test',
+  collectionName: 'ReeceBadTest',
+  demo: false,
+  hub: hub(
+    'cosmos158d2rz0aw8cxx86j0tl8gfwleqyqefr9xdgth2jdfse2d9uumltsu83rfr',
+    'cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv',
+  ),
+  eth: eth(REECE_TEST_BRIDGE),
+  explorer: explorers(REECE_TEST_BRIDGE),
+  sourceUrl: SOURCE,
+}
+
+/** The real collection. Escrow and bridge don't exist yet, so the app shows "not live yet". */
+const badkids: Deployment = {
+  id: 'badkids',
+  collectionName: 'Bad Kids',
+  demo: false,
+  hub: hub('cosmos12gsv9tmjhhg86wg9fnd9cnju28jx3fxva9cn8dh9meketkfxxajqmg3exz', null),
+  eth: eth(null),
+  explorer: explorers(null),
+  sourceUrl: SOURCE,
+}
+
+/** In-memory adapter replaying the mockup's example wallet. Shows the test contracts on About, like the mockup. */
+const demo: Deployment = {
+  ...reeceTest,
+  id: 'demo',
+  collectionName: 'Bad Kids',
+  demo: true,
+}
+
+export const DEPLOYMENTS: Readonly<Record<DeploymentId, Deployment>> = {
+  'reece-test': reeceTest,
+  badkids,
+  demo,
+}
+
+/** Both contracts exist, so sends and claims make sense. */
+export function isLive(d: Deployment): boolean {
+  return d.hub.escrow !== null && d.eth.bridge !== null
+}
+
+/** `?demo` in the query string always wins, so any build can be demoed. */
+export function selectDeployment(envId: string | undefined, search: string): Deployment {
+  if (new URLSearchParams(search).has('demo')) return demo
+  const id = envId?.trim() || 'reece-test'
+  if (!(id in DEPLOYMENTS)) {
+    throw new Error(`VITE_DEPLOYMENT="${id}" is not one of ${Object.keys(DEPLOYMENTS).join(', ')}`)
+  }
+  return DEPLOYMENTS[id as DeploymentId]
+}
+
+/** The deployment this page runs, fixed at load. */
+export const deployment: Deployment = selectDeployment(
+  import.meta.env.VITE_DEPLOYMENT,
+  typeof location === 'undefined' ? '' : location.search,
+)
+
+/** Reown (WalletConnect) project id. Without it, only injected wallets are offered. */
+export const wcProjectId: string | undefined = import.meta.env.VITE_WC_PROJECT_ID?.trim() || undefined

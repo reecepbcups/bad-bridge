@@ -1,0 +1,15 @@
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; list-style: none; margin: 0; padding: 0; }
+.steps li { display: flex; align-items: center; gap: 8px; font: 700 20px/1.1 var(--display); color: var(--ink-soft); }
+.steps .n {
+  flex: none; width: 34px; height: 34px; display: grid; place-items: center;
+  border: 2px solid currentColor; border-radius: var(--wobble); font-size: 20px;
+}
+.steps li.now { color: var(--ink); }
+.steps li.now .n { background: var(--sun); color: var(--sun-ink); border-color: var(--ink); }
+/* --ok-ink, not the mockup's --ok: the labels drop below large-text size on phones */
+.steps li.past { color: var(--ok-ink); }
+.steps small { display: block; font: 600 12px/1.2 var(--body); color: var(--ink-soft); }
+
+@media (max-width: 520px) {
+  .steps li { flex-direction: column; align-items: flex-start; font-size: 17px; }
+}

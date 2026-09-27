@@ -1,0 +1,19 @@
+.header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.logo { font: 700 44px/0.9 var(--display); letter-spacing: -0.5px; margin: 0; }
+.logo .bad { color: var(--crayon); }
+/* block, because the mockup ran in quirks mode, where a line holding only the squiggle gets no strut */
+.header svg { display: block; }
+.wallets { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 500 12.5px/1 var(--mono); padding: 7px 11px; color: var(--ink); background: none;
+  border: 2px solid var(--ink); border-radius: var(--wobble-2);
+}
+button.chip { cursor: pointer; }
+button.chip:disabled { cursor: progress; opacity: .7; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.chip.off .dot { background: none !important; border: 2px solid currentColor; }
+
+@media (max-width: 520px) {
+  .logo { font-size: 38px; }
+}

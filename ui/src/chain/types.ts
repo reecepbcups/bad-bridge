@@ -1,0 +1,219 @@
+// The contract between the UI and the chain adapters (hub/, eth/, demo/). Adapter-agnostic on purpose:
+// nothing here knows about cosmjs, wagmi or graz. Every async method rejects with a BridgeError.
+
+import type { Address, Hex } from 'viem'
+
+/** A kid's token id. The same number on both chains: a u32, canonical decimal on the Hub. */
+export type KidId = number
+/** 0x Ethereum address. Adapters return it checksummed. */
+export type EthAddress = Address
+/** bech32 Cosmos Hub account address (cosmos1…). */
+export type HubAddress = string
+
+/** An escrow record: the kid is locked on the Hub and bound to this Ethereum recipient. */
+export interface EscrowRecord {
+  /** The kid. */
+  tokenId: KidId
+  /** Where the kid gets minted, checksummed. */
+  recipient: EthAddress
+}
+
+/** The Hub tx that sent a kid into the escrow, as found by tx search. */
+export interface SendInfo {
+  /** The kid. */
+  tokenId: KidId
+  /** Hub tx hash, uppercase hex without 0x (the form Mintscan links use). */
+  txHash: string
+  /** Hs: the height the tx landed in. The record is in state after this block. */
+  height: number
+  /** Hub address that sent the kid. */
+  sender: HubAddress
+  /** Recipient from the tx's eth_recipient attribute, checksummed. */
+  recipient: EthAddress
+  /** Block time of the tx, when the source returns it (REST does, RPC tx_search doesn't). */
+  time?: Date
+}
+
+/** A Hub block header, trimmed to what the UI needs. */
+export interface HubBlock {
+  /** Block height. */
+  height: number
+  /** Block time. Also the app's notion of "now" for chain-relative copy. */
+  time: Date
+}
+
+/** Ethereum's light client of the Hub, as BadBridge resolves it through the router. */
+export interface ClientStatus {
+  /** Latest Hub height Ethereum has seen (latestHeight.revisionHeight). */
+  latestHeight: number
+  /** A frozen client verifies nothing: new kids can't be proven. Already-proven kids can still be claimed. */
+  frozen: boolean
+}
+
+/** One kid's state on Ethereum. */
+export interface KidEthStatus {
+  /** bridge.proven(id): the proven recipient, or null until a proof lands. */
+  proven: EthAddress | null
+  /** bridge.ownerOf(id): the current owner, or null until minted. */
+  owner: EthAddress | null
+}
+
+/** Result of simulating a send. */
+export interface SendEstimate {
+  /** Gas limit the tx will use, safety margin included. */
+  gas: number
+  /** Fee in the smallest unit of `denom`, as an integer string. */
+  amount: string
+  /** Fee denom, e.g. uatom. */
+  denom: string
+}
+
+/** A broadcast Hub send that made it into a block. */
+export interface SendResult {
+  /** Hub tx hash, uppercase hex without 0x. */
+  txHash: string
+  /** Hs: the height it landed in. */
+  height: number
+}
+
+/** A mined Ethereum claim. */
+export interface ClaimResult {
+  /** Ethereum tx hash. */
+  txHash: Hex
+}
+
+/** Read-only Hub queries (REST with RPC fallback in the real adapter). */
+export interface HubReader {
+  /** Kids `owner` holds in the cw721, every page, ascending. */
+  ownedKids(owner: HubAddress): Promise<KidId[]>
+  /** The escrow record for one kid, or null if it never left the Hub. */
+  record(id: KidId): Promise<EscrowRecord | null>
+  /** Every escrow record, ascending by id (pages through `pending`). */
+  allRecords(): Promise<EscrowRecord[]>
+  /** The send tx for one kid, or null if tx search can't find it (then Hs is unknown: don't guess). */
+  sendInfo(id: KidId): Promise<SendInfo | null>
+  /** Every send made by `sender`, newest first. */
+  sendsBy(sender: HubAddress): Promise<SendInfo[]>
+  /** The latest Hub block. */
+  latestBlock(): Promise<HubBlock>
+  /** The Hub block at `height`. */
+  block(height: number): Promise<HubBlock>
+  /** The cw721 the escrow accepts (escrow `config {}`), for the startup sanity check. */
+  escrowCw721(): Promise<HubAddress>
+}
+
+/** Read-only Ethereum queries (viem, batched through Multicall3 in the real adapter). */
+export interface EthReader {
+  /** The Hub light client's height and frozen flag, via bridge.lightClient(). */
+  client(): Promise<ClientStatus>
+  /** proven(id) and ownerOf(id) for every id, batched. Every requested id is a key in the map. */
+  kidStatus(ids: readonly KidId[]): Promise<Map<KidId, KidEthStatus>>
+  /** True if `address` has code, so the UI can warn before minting to a contract. */
+  isContract(address: EthAddress): Promise<boolean>
+  /** bridge.ESCROW(): the raw 32-byte escrow address as 0x hex, for the startup sanity check. */
+  bridgeEscrow(): Promise<Hex>
+}
+
+/** Hub transactions, bound to the connected Hub wallet. */
+export interface HubWriter {
+  /** The signing account. */
+  address: HubAddress
+  /** Simulates one tx that sends every kid to the escrow. Never opens the wallet. */
+  simulateSend(ids: readonly KidId[], recipient: EthAddress): Promise<SendEstimate>
+  /** Simulates, then signs and broadcasts one tx with a send_nft per kid. Resolves once it's in a block. */
+  send(ids: readonly KidId[], recipient: EthAddress): Promise<SendResult>
+}
+
+/** Ethereum transactions, bound to the connected Ethereum wallet. */
+export interface EthWriter {
+  /** The sending account. Who claims doesn't matter: kids always mint to their proven recipient. */
+  address: EthAddress
+  /** Mints proven kids: claim(id) for one, Multicall3 aggregate3 for several. Resolves once mined. */
+  claim(ids: readonly KidId[]): Promise<ClaimResult>
+}
+
+/** Everything an adapter can fail with. The UI maps each code to kid-friendly copy. */
+export type BridgeErrorCode =
+  /** escrow: the cw721 isn't the collection it accepts */
+  | 'WrongCollection'
+  /** escrow: token id isn't a canonical u32 */
+  | 'BadTokenId'
+  /** escrow: recipient isn't 20 bytes, or a pasted address is malformed */
+  | 'BadRecipient'
+  /** escrow: recipient is the zero address */
+  | 'ZeroRecipient'
+  /** escrow: this kid already has a record */
+  | 'AlreadyBridged'
+  /** bridge: claim before the proof landed */
+  | 'NotProven'
+  /** wallet: the user declined */
+  | 'UserRejected'
+  /** not enough ATOM or ETH for fees */
+  | 'InsufficientFunds'
+  /** wallet is on another chain and didn't switch */
+  | 'WrongChain'
+  /** this deployment has no escrow or bridge yet */
+  | 'NotLive'
+  /** every endpoint failed or timed out */
+  | 'Network'
+  /** anything else; `detail` has the raw message */
+  | 'Unknown'
+
+/** The only error type adapters throw. */
+export class BridgeError extends Error {
+  override readonly name = 'BridgeError'
+  /** What went wrong, for picking copy. */
+  readonly code: BridgeErrorCode
+  /** Raw detail for logs and a "details" disclosure. Never the headline copy. */
+  readonly detail: string | undefined
+  /** The kid it's about, when the chain says (AlreadyBridged, NotProven). */
+  readonly tokenId: KidId | undefined
+
+  constructor(code: BridgeErrorCode, detail?: string, options?: { tokenId?: KidId; cause?: unknown }) {
+    super(detail ? `${code}: ${detail}` : code, { cause: options?.cause })
+    this.code = code
+    this.detail = detail
+    this.tokenId = options?.tokenId
+  }
+}
+
+/** Type guard that also works across bundles (checks the name, not the prototype). */
+export function isBridgeError(e: unknown): e is BridgeError {
+  return e instanceof BridgeError || (e instanceof Error && e.name === 'BridgeError' && 'code' in e)
+}
+
+/** Passes BridgeErrors through and wraps anything else as Unknown. */
+export function toBridgeError(e: unknown): BridgeError {
+  if (isBridgeError(e)) return e
+  const detail = e instanceof Error ? e.message : String(e)
+  return new BridgeError('Unknown', detail, { cause: e })
+}
+
+/** Where a wallet connection is. */
+export type WalletStatus = 'disconnected' | 'connecting' | 'connected'
+
+/** A wallet the connect sheet can offer. */
+export interface WalletOption {
+  /** Stable id passed to connect(), e.g. "keplr" or "walletConnect". */
+  id: string
+  /** Display name, e.g. "Keplr". */
+  name: string
+  /** The extension is present. Always true for WalletConnect-style options. */
+  installed: boolean
+}
+
+/** One chain's wallet connection. Same shape for the Hub and Ethereum. */
+export interface WalletState<A extends string = string> {
+  /** Connection state. */
+  status: WalletStatus
+  /** The connected account; set only while connected. */
+  address?: A
+  /** Name of the connected wallet, e.g. "Keplr" or "MetaMask", for "Check Keplr…" copy. */
+  walletName?: string
+  /** Wallets to offer, installed ones first. */
+  options: WalletOption[]
+  /** Connects the option with this id. Rejects with a BridgeError (UserRejected, WrongChain…). */
+  connect(id: string): Promise<void>
+  /** Disconnects. Never rejects. */
+  disconnect(): Promise<void>
+}

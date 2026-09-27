@@ -1,0 +1,28 @@
+/* About page styles, ported from the mockup. */
+.about { display: grid; gap: 18px; }
+.about h3 { font: 700 26px/1 var(--display); margin: 8px 0 0; }
+.how { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.how li { display: grid; gap: 6px; align-content: start; font-size: 14.5px; }
+.how .n { width: 34px; height: 34px; display: grid; place-items: center; font: 700 20px/1 var(--display); background: var(--sun); color: var(--sun-ink); border: 2px solid var(--ink); border-radius: var(--wobble); }
+.how b { font: 700 21px/1.05 var(--display); }
+.how .where { font: 700 12px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; }
+.how .where.hub { color: var(--hub-ink); }
+.how .where.mid { color: var(--ink-soft); }
+.how .where.eth { color: var(--eth-ink); }
+.trust { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.trust li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 15px; }
+.trust li::before { content: "✓"; font: 700 22px/1 var(--display); color: var(--ok); }
+.trust b { font-weight: 800; }
+.faq { display: grid; }
+.faq details { border-top: 2px dashed var(--line); padding-block: 10px; }
+.faq summary { cursor: pointer; font: 700 20px/1.2 var(--display); }
+.faq p { margin: 6px 0 2px; font-size: 15px; color: var(--ink-soft); max-width: 62ch; }
+.addrs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; font-size: 14px; }
+.addrs dt { font-weight: 800; }
+.addrs dd { margin: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 520px) {
+  .how { grid-template-columns: 1fr; }
+  .addrs { grid-template-columns: 1fr; gap: 2px; }
+  .addrs dd { margin-bottom: 8px; }
+}

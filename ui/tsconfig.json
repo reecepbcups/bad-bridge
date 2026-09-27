@@ -1,0 +1,5 @@
+{
+  // Solution file: app code in tsconfig.app.json, tooling and e2e in tsconfig.node.json.
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}

@@ -1,0 +1,43 @@
+/* Self-hosted fonts (no third-party requests). Same families and weights the mockup pulled from
+   Google Fonts: Gaegu 400/700, Nunito 500/700/800, JetBrains Mono 500. Latin only; the copy is English. */
+@import "@fontsource/gaegu/latin-400.css";
+@import "@fontsource/gaegu/latin-700.css";
+@import "@fontsource/nunito/latin-500.css";
+@import "@fontsource/nunito/latin-700.css";
+@import "@fontsource/nunito/latin-800.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+
+/* Gaegu draws its arrows in its Korean slices, which the mockup got for free from Google Fonts.
+   Pull in just those two glyphs so "Next →" and "← Back" match. */
+@font-face {
+  font-family: "Gaegu";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/gaegu/files/gaegu-103-400-normal.woff2") format("woff2");
+  unicode-range: U+2190;
+}
+@font-face {
+  font-family: "Gaegu";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/gaegu/files/gaegu-110-400-normal.woff2") format("woff2");
+  unicode-range: U+2192;
+}
+@font-face {
+  font-family: "Gaegu";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("@fontsource/gaegu/files/gaegu-103-700-normal.woff2") format("woff2");
+  unicode-range: U+2190;
+}
+@font-face {
+  font-family: "Gaegu";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("@fontsource/gaegu/files/gaegu-110-700-normal.woff2") format("woff2");
+  unicode-range: U+2192;
+}

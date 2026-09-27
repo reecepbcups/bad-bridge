@@ -1,0 +1,29 @@
+/* Tracker (My kids) styles, ported from the mockup. */
+.lookup { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lookup input { flex: 1 1 260px; }
+.lookup .btn { font-size: 19px; padding: 9px 16px 10px; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; }
+.item { display: grid; grid-template-columns: 72px 1fr auto; gap: 6px 14px; align-items: center; padding-block: 14px; border-top: 2px dashed var(--line); }
+.item:first-child { border-top: 0; }
+.item .art { width: 72px; height: 72px; grid-row: span 2; }
+.item .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.item .id { font: 700 24px/1 var(--display); }
+.item a.id { color: inherit; text-decoration: none; }
+.item .meta { font-size: 13px; color: var(--ink-soft); }
+.item .act { grid-row: span 2; }
+.item .act .btn { font-size: 19px; padding: 8px 16px 9px; }
+.item details { grid-column: 2 / -1; }
+.item summary { cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--ink-soft); width: max-content; }
+.item details .stages { margin-top: 10px; }
+.track { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; max-width: 320px; }
+.track span { height: 7px; border: 1.5px solid var(--ink); border-radius: 99px 30px 99px 30px; }
+.track span.on { background: var(--ok); }
+.track span.cur { background: repeating-linear-gradient(-45deg, var(--sun) 0 5px, transparent 5px 9px); }
+.track-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; max-width: 320px; font: 700 11px/1.2 var(--body); color: var(--ink-soft); }
+
+@media (max-width: 520px) {
+  .item { grid-template-columns: 56px 1fr; }
+  .item .art { width: 56px; height: 56px; }
+  .item .act { grid-row: auto; grid-column: 2; }
+}

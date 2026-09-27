@@ -1,0 +1,38 @@
+/* Bridge flow styles, ported from the mockup: pick grid, review, crossing scene. */
+
+/* kid grid */
+.kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; }
+.kid {
+  position: relative; cursor: pointer; text-align: center; color: var(--ink);
+  border: 2px solid var(--line); border-radius: var(--wobble-2);
+  padding: 10px 8px 8px; background: none; font: inherit;
+  transition: transform .12s, border-color .12s;
+}
+.kid:hover:not(:disabled) { transform: rotate(-1.5deg); border-color: var(--ink); }
+.kid .art { width: 96px; height: 96px; margin: 0 auto; }
+.kid .name { font: 700 19px/1 var(--display); display: block; margin-top: 4px; }
+.kid .sub { font: 600 11.5px/1.3 var(--body); color: var(--ink-soft); display: block; }
+.kid[aria-pressed="true"] { border-color: var(--ink); border-width: 2.5px; background: var(--hub-tint); transform: rotate(1deg); }
+.kid[aria-pressed="true"]::after {
+  content: "✓"; position: absolute; top: -10px; right: -8px;
+  width: 28px; height: 28px; display: grid; place-items: center;
+  font: 700 20px/1 var(--display); background: var(--sun); color: var(--sun-ink);
+  border: 2px solid var(--ink); border-radius: var(--wobble);
+}
+.kid:disabled { cursor: default; opacity: .5; }
+
+/* review: the picked kids */
+.picked { display: flex; flex-wrap: wrap; gap: 10px; }
+.picked .mini { display: flex; align-items: center; gap: 6px; font: 700 18px/1 var(--display); }
+.picked .art { width: 44px; height: 44px; }
+
+/* crossing scene */
+.scene { width: 100%; height: auto; display: block; color: var(--ink); overflow: visible; }
+.scene text { font: 700 19px var(--display); fill: var(--ink); }
+.bob { animation: bob .5s ease-in-out infinite alternate; }
+@keyframes bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .bob { animation: none; }
+  .kid { transition: none; }
+}
