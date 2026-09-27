@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:live": "playwright test -c e2e-live",
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:fork": "vitest run --config vitest.fork.config.ts",
     "check": "pnpm typecheck && pnpm lint && pnpm test"

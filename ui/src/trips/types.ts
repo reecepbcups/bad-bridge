@@ -1,7 +1,7 @@
 // Workstream C owns src/trips/. These types are the contract the UI codes against.
 
 import type { Hex } from 'viem'
-import type { BridgeError, EthAddress, HubAddress, KidId } from '../chain/types'
+import type { BridgeError, ClaimResult, ClaimStage, EthAddress, HubAddress, KidId, SendResult, SendStage } from '../chain/types'
 
 /**
  * Where a kid is on its trip. Rebuilt from chain state every time (see derive.ts and PLAN.md's state table).
@@ -137,4 +137,28 @@ export interface MutationState<Args extends unknown[], Result> {
   error: BridgeError | null
   /** Back to idle. */
   reset: () => void
+}
+
+/** Options for useSendKids. */
+export interface SendKidsOptions {
+  /** Hears each stage of a running send, as HubWriter.send reports it. */
+  onStage?: (stage: SendStage) => void
+}
+
+/** useSendKids(): the mutation plus where a running send is. */
+export interface SendKidsState extends MutationState<[ids: readonly KidId[], recipient: EthAddress], SendResult> {
+  /** simulating → signing → broadcasting while a send runs; null otherwise (and briefly before the first stage). */
+  stage: SendStage | null
+}
+
+/** Options for useClaimKids. */
+export interface ClaimKidsOptions {
+  /** Hears each stage of a running claim, as EthWriter.claim reports it. */
+  onStage?: (stage: ClaimStage) => void
+}
+
+/** useClaimKids(): the mutation plus where a running claim is. */
+export interface ClaimKidsState extends MutationState<[ids: readonly KidId[]], ClaimResult> {
+  /** signing → confirming while a claim runs; null otherwise (and briefly before the first stage). */
+  stage: ClaimStage | null
 }

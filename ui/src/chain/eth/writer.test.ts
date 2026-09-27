@@ -167,6 +167,52 @@ describe('claim', () => {
   })
 })
 
+describe('claim progress (onStage)', () => {
+  it('reports signing just before the wallet, then confirming once the tx is out', async () => {
+    const stages: string[] = []
+    let sentWhenSigning = -1
+    await writer().claim([1], {
+      onStage: (s) => {
+        stages.push(s)
+        if (s === 'signing') sentWhenSigning = chain.sent.length
+      },
+    })
+    expect(stages).toEqual(['signing', 'confirming'])
+    expect(sentWhenSigning).toBe(0)
+  })
+
+  it('reports the same for a batch', async () => {
+    const stages: string[] = []
+    await writer().claim([1, 2, 3], { onStage: (s) => stages.push(s) })
+    expect(stages).toEqual(['signing', 'confirming'])
+  })
+
+  it('never says signing when the claim fails before the wallet', async () => {
+    const stages: string[] = []
+    await expect(writer().claim([5], { onStage: (s) => stages.push(s) })).rejects.toMatchObject({ code: 'NotProven' })
+    chain.walletChainId = 137
+    await expect(writer().claim([1], { onStage: (s) => stages.push(s) })).rejects.toMatchObject({ code: 'WrongChain' })
+    expect(stages).toEqual([])
+  })
+
+  it('stops at signing when the wallet says no', async () => {
+    chain.walletError = Object.assign(new Error('User rejected the request.'), { code: 4001 })
+    const stages: string[] = []
+    await expect(writer().claim([1], { onStage: (s) => stages.push(s) })).rejects.toMatchObject({ code: 'UserRejected' })
+    expect(stages).toEqual(['signing'])
+  })
+
+  it('a callback that throws never breaks the claim', async () => {
+    const { txHash } = await writer().claim([1], {
+      onStage: () => {
+        throw new Error('bad listener')
+      },
+    })
+    expect(txHash).toMatch(/^0x/)
+    expect(chain.owners.get(1)).toBe(ALICE)
+  })
+})
+
 describe('sortClaimable', () => {
   it('splits ids by what the chain says', () => {
     const status = new Map<KidId, KidEthStatus>([

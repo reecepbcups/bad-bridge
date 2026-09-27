@@ -5,7 +5,7 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default defineConfig(
-  { ignores: ['dist', 'mockup', 'playwright-report', 'test-results', 'coverage'] },
+  { ignores: ['dist', 'mockup', 'playwright-report', 'test-results', 'test-results-live', 'coverage'] },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   {
@@ -24,7 +24,7 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ['*.config.{ts,js}', 'e2e/**/*.ts'],
+    files: ['*.config.{ts,js}', 'e2e/**/*.ts', 'e2e-live/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
 )

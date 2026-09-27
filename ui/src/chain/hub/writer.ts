@@ -13,7 +13,17 @@ import { AuthInfo, Fee, Tx, TxBody, TxRaw } from 'cosmjs-types/cosmos/tx/v1beta1
 import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx'
 import { sha256 } from 'viem'
 import type { Deployment } from '../../config/deployments'
-import { BridgeError, type EthAddress, type HubAddress, type HubWriter, type KidId, type SendEstimate, type SendResult } from '../types'
+import {
+  BridgeError,
+  stageReporter,
+  type EthAddress,
+  type HubAddress,
+  type HubWriter,
+  type KidId,
+  type SendEstimate,
+  type SendResult,
+  type SendStage,
+} from '../types'
 import { buildSendMsgs, type ExecuteEncodeObject } from './encode'
 import { chainLogToBridgeError, toHubError, walletErrorToBridgeError } from './errors'
 import { toHeight } from './events'
@@ -292,6 +302,54 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
     }
   }
 
+  async function sendTx(ids: readonly KidId[], recipient: EthAddress, report: (stage: SendStage) => void): Promise<SendResult> {
+    report('simulating')
+    let prepared: Prepared
+    try {
+      prepared = await prepare(ids, recipient)
+    } catch (e) {
+      // a failed simulate never reaches the wallet
+      throw toHubError(e, ids)
+    }
+
+    let txBytes: Uint8Array
+    try {
+      const wallet = await signer()
+      report('signing')
+      const client = await SigningCosmWasmClient.offline(wallet)
+      const fee = { amount: [{ denom: prepared.estimate.denom, amount: prepared.estimate.amount }], gas: String(prepared.estimate.gas) }
+      const raw = await client.sign(address, prepared.msgs, fee, '', {
+        accountNumber: prepared.account.accountNumber,
+        sequence: prepared.account.sequence,
+        chainId: hub.chainId,
+      })
+      txBytes = TxRaw.encode(raw).finish()
+    } catch (e) {
+      throw walletErrorToBridgeError(e)
+    }
+
+    report('broadcasting')
+    const hash = sha256(txBytes).slice(2).toUpperCase()
+    try {
+      const sent = await broadcastSync(t, txBytes)
+      if (!sent.accepted) throw chainLogToBridgeError(sent.log, ids)
+    } catch (e) {
+      if (!(e instanceof BridgeError && e.code === 'Network')) throw toHubError(e, ids)
+      // every endpoint failed to answer, but one may still have taken it: look before giving up
+      const landed = await waitForInclusion(hash, ids, Math.min(inclusionTimeoutMs, 30_000))
+      if (landed) return landed
+      throw new BridgeError('Network', `couldn't broadcast tx ${hash}; check an explorer before trying again (${e.detail ?? ''})`)
+    }
+
+    try {
+      const landed = await waitForInclusion(hash, ids, inclusionTimeoutMs)
+      if (landed) return landed
+    } catch (e) {
+      throw toHubError(e, ids)
+    }
+    throw new BridgeError('Network', `tx ${hash} was accepted but isn't in a block after ${Math.round(inclusionTimeoutMs / 1000)}s; check an explorer before trying again`)
+  }
+
   return {
     address,
 
@@ -303,48 +361,13 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
       }
     },
 
-    async send(ids, recipient) {
-      let prepared: Prepared
+    async send(ids, recipient, options) {
+      const stage = stageReporter(options?.onStage)
       try {
-        prepared = await prepare(ids, recipient)
-      } catch (e) {
-        // a failed simulate never reaches the wallet
-        throw toHubError(e, ids)
+        return await sendTx(ids, recipient, stage.report)
+      } finally {
+        stage.done()
       }
-
-      let txBytes: Uint8Array
-      try {
-        const client = await SigningCosmWasmClient.offline(await signer())
-        const fee = { amount: [{ denom: prepared.estimate.denom, amount: prepared.estimate.amount }], gas: String(prepared.estimate.gas) }
-        const raw = await client.sign(address, prepared.msgs, fee, '', {
-          accountNumber: prepared.account.accountNumber,
-          sequence: prepared.account.sequence,
-          chainId: hub.chainId,
-        })
-        txBytes = TxRaw.encode(raw).finish()
-      } catch (e) {
-        throw walletErrorToBridgeError(e)
-      }
-
-      const hash = sha256(txBytes).slice(2).toUpperCase()
-      try {
-        const sent = await broadcastSync(t, txBytes)
-        if (!sent.accepted) throw chainLogToBridgeError(sent.log, ids)
-      } catch (e) {
-        if (!(e instanceof BridgeError && e.code === 'Network')) throw toHubError(e, ids)
-        // every endpoint failed to answer, but one may still have taken it: look before giving up
-        const landed = await waitForInclusion(hash, ids, Math.min(inclusionTimeoutMs, 30_000))
-        if (landed) return landed
-        throw new BridgeError('Network', `couldn't broadcast tx ${hash}; check an explorer before trying again (${e.detail ?? ''})`)
-      }
-
-      try {
-        const landed = await waitForInclusion(hash, ids, inclusionTimeoutMs)
-        if (landed) return landed
-      } catch (e) {
-        throw toHubError(e, ids)
-      }
-      throw new BridgeError('Network', `tx ${hash} was accepted but isn't in a block after ${Math.round(inclusionTimeoutMs / 1000)}s; check an explorer before trying again`)
     },
   }
 }

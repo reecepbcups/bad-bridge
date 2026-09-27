@@ -2,28 +2,10 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { DEPLOYMENTS } from '../../config/deployments'
 import { HubWalletProvider } from './provider'
 import { useHubWallet, useHubWriter } from './wallet'
-
-// graz pulls in @walletconnect/modal, which calls window.matchMedia while it's being imported. jsdom has the key
-// with an undefined value, so src/test/setup.ts's `'matchMedia' in window` guard skips its stub.
-vi.hoisted(() => {
-  if (typeof window.matchMedia !== 'function') {
-    window.matchMedia = (query: string) =>
-      ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: () => undefined,
-        removeEventListener: () => undefined,
-        addListener: () => undefined,
-        removeListener: () => undefined,
-        dispatchEvent: () => false,
-      }) as MediaQueryList
-  }
-})
 
 const deployment = DEPLOYMENTS['reece-test']
 

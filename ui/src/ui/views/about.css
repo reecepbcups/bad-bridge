@@ -20,6 +20,9 @@
 .addrs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; font-size: 14px; }
 .addrs dt { font-weight: 800; }
 .addrs dd { margin: 0; overflow-wrap: anywhere; }
+.contracts-check { font-size: 14px; margin: 12px 0 0; }
+.contracts-check.ok { color: var(--ok-ink); font-weight: 700; }
+.contracts-check.bad { color: var(--crayon-ink); font-weight: 700; }
 
 @media (max-width: 520px) {
   .how { grid-template-columns: 1fr; }

@@ -16,6 +16,29 @@ import {
 // The bridge flow end to end on the demo adapter: pick → review → crossing → claim → done, and the ways
 // Send refuses or fails.
 
+test('send and claim say where the transaction is, from the writers’ own progress', async ({ page }) => {
+  // no `instant`: the demo wallet takes a moment to "sign", like a real one
+  const errors = trackErrors(page)
+  await page.goto('./?demo=paused#/')
+  await demoReady(page)
+  await pickAndReview(page, [9176])
+  await page.getByLabel('Got it, one way only').check()
+  await expect(sendButton(page)).toHaveText('Send 1 kid')
+  await sendButton(page).click()
+  await expect(sendButton(page)).toHaveText('Check Keplr…')
+  await expect(page.getByText('Approve it in Keplr. Once signed, it lands on the Hub in a few seconds.')).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'Crossing the bridge…' })).toBeVisible()
+
+  await skipAhead(page)
+  await skipAhead(page)
+  await expect(page.getByRole('heading', { level: 2, name: 'It made it across!' })).toBeVisible()
+  await page.getByRole('button', { name: 'Claim 1 kid' }).click()
+  await expect(page.getByRole('button', { name: 'Check MetaMask…' })).toBeDisabled()
+  await expect(page.getByText('Approve it in MetaMask.')).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'Welcome to Ethereum, #9176' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, done', async ({ page }) => {
   const errors = trackErrors(page)
   await page.goto(`${DEMO_OFF}#/`)

@@ -8,6 +8,7 @@ import { vi } from 'vitest'
 import { BridgeContext, type BridgeContextValue } from '../chain/context'
 import {
   BridgeError,
+  type ClaimOptions,
   type ClientStatus,
   type EthAddress,
   type EthReader,
@@ -17,6 +18,7 @@ import {
   type HubWriter,
   type KidId,
   type SendInfo,
+  type SendOptions,
   type WalletState,
 } from '../chain/types'
 import { DEPLOYMENTS, type Deployment } from '../config/deployments'
@@ -138,7 +140,10 @@ export function fakeHubWriter(chain: FakeChain, address: HubAddress, { indexed =
   return {
     address,
     simulateSend: vi.fn((ids: readonly KidId[]) => Promise.resolve({ gas: 100_000 * ids.length, amount: '500', denom: 'uatom' })),
-    send: vi.fn((ids: readonly KidId[], recipient: EthAddress) => {
+    send: vi.fn((ids: readonly KidId[], recipient: EthAddress, options?: SendOptions) => {
+      options?.onStage?.('simulating')
+      options?.onStage?.('signing')
+      options?.onStage?.('broadcasting')
       const height = chain.hubHeight
       for (const id of ids) {
         chain.records.set(id, recipient)
@@ -154,7 +159,9 @@ export function fakeHubWriter(chain: FakeChain, address: HubAddress, { indexed =
 export function fakeEthWriter(chain: FakeChain, address: EthAddress) {
   return {
     address,
-    claim: vi.fn((ids: readonly KidId[]) => {
+    claim: vi.fn((ids: readonly KidId[], options?: ClaimOptions) => {
+      options?.onStage?.('signing')
+      options?.onStage?.('confirming')
       for (const id of ids) {
         const to = chain.proven.get(id)
         if (to) chain.owners.set(id, to)

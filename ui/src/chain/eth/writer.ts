@@ -7,7 +7,16 @@ import {
   writeContract,
 } from 'viem/actions'
 import type { Deployment } from '../../config/deployments'
-import { BridgeError, type ClaimResult, type EthAddress, type EthReader, type EthWriter, type KidId } from '../types'
+import {
+  BridgeError,
+  stageReporter,
+  type ClaimResult,
+  type ClaimStage,
+  type EthAddress,
+  type EthReader,
+  type EthWriter,
+  type KidId,
+} from '../types'
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
 import { decodeRevert, revertToBridgeError, toEthError } from './errors'
@@ -43,6 +52,9 @@ export type EthWriterDeps = {
     }
 )
 
+/** Progress for one claim; `signing` goes out just before the wallet is asked. */
+type Report = (stage: ClaimStage) => void
+
 /** Splits requested ids into what can be claimed now, and why the rest can't. */
 export function sortClaimable(ids: readonly KidId[], status: Map<KidId, { proven: unknown; owner: unknown }>) {
   const claimable: KidId[] = []
@@ -77,6 +89,7 @@ function nothingToClaim(minted: readonly KidId[], unproven: readonly KidId[]): B
  * 2. re-reads status and keeps only proven, unminted kids (none left → NotProven, detail says why);
  * 3. one kid → bridge.claim(id); several → one Multicall3.aggregate3 of claims (claim ignores msg.sender);
  * 4. simulates, sends, waits for the receipt and fails if it reverted.
+ * `onStage` hears `signing` right before the wallet is asked, and `confirming` once the tx is sent.
  */
 export function createEthWriter(deps: EthWriterDeps): EthWriter {
   const { deployment, publicClient } = deps
@@ -86,7 +99,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
   const chain = ethChain(deployment)
   const multicall3 = deployment.eth.multicall3
 
-  async function claimOne(wallet: SignerClient, bridge: Address, id: KidId): Promise<Hex> {
+  async function claimOne(wallet: SignerClient, bridge: Address, id: KidId, report: Report): Promise<Hex> {
     const { request } = await simulateContract(publicClient, {
       account: wallet.account,
       address: bridge,
@@ -94,6 +107,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       functionName: 'claim',
       args: [id],
     })
+    report('signing')
     return writeContract(wallet, { ...request, account: wallet.account, chain })
   }
 
@@ -105,7 +119,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     }))
   }
 
-  async function claimMany(wallet: SignerClient, bridge: Address, ids: readonly KidId[]): Promise<Hex> {
+  async function claimMany(wallet: SignerClient, bridge: Address, ids: readonly KidId[], report: Report): Promise<Hex> {
     // allowFailure: a kid someone else claims meanwhile doesn't sink the rest. Simulate to drop any that fail now.
     const { result } = await simulateContract(publicClient, {
       account: wallet.account,
@@ -120,7 +134,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       const revert = first ? decodeRevert(first.returnData) : undefined
       throw revert ? revertToBridgeError(revert, ids[0]) : new BridgeError('Unknown', `every claim in the batch failed: ${kids(ids)}`)
     }
-    if (ok.length === 1) return claimOne(wallet, bridge, ok[0] as KidId)
+    if (ok.length === 1) return claimOne(wallet, bridge, ok[0] as KidId, report)
 
     // Gas comes from the allowFailure: false twin. With allowFailure: true the outer call "succeeds" even
     // when an inner claim runs out of gas, so estimating it directly can come back too low and mint nothing.
@@ -131,6 +145,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       functionName: 'aggregate3',
       args: [calls(bridge, ok, false)],
     })
+    report('signing')
     return writeContract(wallet, {
       account: wallet.account,
       chain,
@@ -142,7 +157,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     })
   }
 
-  async function claim(ids: readonly KidId[]): Promise<ClaimResult> {
+  async function claim(ids: readonly KidId[], report: Report): Promise<ClaimResult> {
     const bridge = requireBridge(deployment)
     ids.forEach(assertKidId)
     const unique = [...new Set(ids)]
@@ -159,9 +174,10 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
 
     const hash =
       claimable.length === 1
-        ? await claimOne(wallet, bridge, claimable[0] as KidId)
-        : await claimMany(wallet, bridge, claimable)
+        ? await claimOne(wallet, bridge, claimable[0] as KidId, report)
+        : await claimMany(wallet, bridge, claimable, report)
 
+    report('confirming')
     let cancelled = false
     const receipt = await waitForTransactionReceipt(publicClient, {
       hash,
@@ -177,11 +193,14 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
 
   return {
     address,
-    claim: async (ids) => {
+    claim: async (ids, options) => {
+      const stage = stageReporter(options?.onStage)
       try {
-        return await claim(ids)
+        return await claim(ids, stage.report)
       } catch (e) {
         throw toEthError(e, ids.length === 1 ? ids[0] : undefined)
+      } finally {
+        stage.done()
       }
     },
   }

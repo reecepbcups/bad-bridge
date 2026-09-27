@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CreateConnectorFn } from 'wagmi'
 import { DEPLOYMENTS } from '../../config/deployments'
-import { createWagmiConfig, wagmiConfigFor } from './config'
+import { createStorage, type CreateConnectorFn as ConnectorFn } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+import { createWagmiConfig, onDemand, wagmiConfigFor } from './config'
 
 // The real WalletConnect connector opens a relay socket as soon as it's set up. Swap in an inert stand-in that
 // records its parameters, so the test can see it's only built with a project id.
@@ -41,5 +43,68 @@ describe('createWagmiConfig', () => {
 
   it('builds one config per deployment', () => {
     expect(wagmiConfigFor(deployment)).toBe(wagmiConfigFor(deployment))
+  })
+})
+
+describe('onDemand', () => {
+  /** A connector whose provider is an SDK we can count loads of. */
+  function sdkConnector(id: string) {
+    const loads = vi.fn(() => Promise.resolve({ sdk: id }))
+    const fn: ConnectorFn = () => ({
+      id,
+      name: id,
+      type: id,
+      connect(this: { getProvider(): Promise<unknown> }) {
+        return this.getProvider().then(() => ({ accounts: [], chainId: 1 }))
+      },
+      disconnect: () => Promise.resolve(),
+      getAccounts: () => Promise.resolve([]),
+      getChainId: () => Promise.resolve(1),
+      getProvider: loads,
+      isAuthorized: () => Promise.resolve(false),
+      onAccountsChanged: () => undefined,
+      onChainChanged: () => undefined,
+      onDisconnect: () => undefined,
+    })
+    return { fn, loads }
+  }
+
+  function build(fn: ConnectorFn, recent?: string) {
+    const backing = new Map<string, string>()
+    const storage = createStorage({
+      storage: { getItem: (k) => backing.get(k) ?? null, setItem: (k, v) => void backing.set(k, v), removeItem: (k) => void backing.delete(k) },
+    })
+    if (recent) void storage.setItem('recentConnectorId', recent)
+    const connector = onDemand(fn)({ chains: [mainnet], emitter: { emit: vi.fn() } as never, storage })
+    // wagmi keeps its own copy of the connector and calls methods on that
+    return { ...connector }
+  }
+
+  it("doesn't load the SDK until the user picks the wallet", async () => {
+    const { fn, loads } = sdkConnector('walletConnect')
+    const connector = build(fn)
+    await expect(connector.getProvider()).rejects.toThrow(/Provider not found/)
+    expect(loads).not.toHaveBeenCalled()
+    await connector.connect()
+    expect(loads).toHaveBeenCalledTimes(1)
+    await expect(connector.getProvider()).resolves.toEqual({ sdk: 'walletConnect' })
+  })
+
+  it('loads it at startup when it was the wallet used last, so reconnecting works', async () => {
+    const { fn, loads } = sdkConnector('coinbaseWalletSDK')
+    await expect(build(fn, 'coinbaseWalletSDK').getProvider()).resolves.toEqual({ sdk: 'coinbaseWalletSDK' })
+    expect(loads).toHaveBeenCalledTimes(1)
+  })
+
+  it("stays put when another wallet was used last", async () => {
+    const { fn, loads } = sdkConnector('coinbaseWalletSDK')
+    await expect(build(fn, 'io.metamask').getProvider()).rejects.toThrow()
+    expect(loads).not.toHaveBeenCalled()
+  })
+
+  it('wraps Coinbase and WalletConnect in the real config, and nothing loads just from building it', async () => {
+    const config = createWagmiConfig(deployment, { wcProjectId: undefined })
+    const coinbase = config.connectors.find((c) => c.id === 'coinbaseWalletSDK')
+    await expect(coinbase?.getProvider()).rejects.toThrow(/Provider not found/)
   })
 })

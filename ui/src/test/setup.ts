@@ -7,7 +7,8 @@ import { afterEach } from 'vitest'
 afterEach(() => cleanup())
 
 window.scrollTo = () => undefined
-if (!('matchMedia' in window)) {
+// jsdom has the key with an undefined value, so check the type, not the key
+if (typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', { value: matchMediaStub, writable: true })
 }
 

@@ -1,7 +1,7 @@
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { useBridge } from '../../../chain/context'
 import { checkRecipient, type RecipientCheck } from '../../../chain/eth/recipient'
-import type { EthAddress, KidId } from '../../../chain/types'
+import type { EthAddress, KidId, SendStage } from '../../../chain/types'
 import { useConfigSanity, useHealth, useSendEstimate, useSendKids } from '../../../trips/hooks'
 import { ConnectButton } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
@@ -12,6 +12,7 @@ import { KidArt } from '../../KidArt'
 import { useToast } from '../../Toasts'
 import { useFlow } from './flow'
 
+// COPY: recipient validation lines
 const BAD_ADDRESS: Readonly<Record<Exclude<RecipientCheck, { ok: true }>['reason'], string>> = {
   format: "That doesn't look like an Ethereum address (0x + 40 characters).",
   zero: "That's the zero address. Kids sent there are gone forever.",
@@ -19,6 +20,21 @@ const BAD_ADDRESS: Readonly<Record<Exclude<RecipientCheck, { ok: true }>['reason
 }
 
 const CHECKING_SEND = 'Checking the send with the Hub…'
+
+// COPY: send progress (button labels and the line under them)
+/** The Send button while a send runs, from the Hub writer's progress. */
+const SEND_LABEL: Readonly<Record<SendStage, (wallet: string) => string>> = {
+  simulating: () => 'Checking…',
+  signing: (wallet) => `Check ${wallet}…`,
+  broadcasting: () => 'Sending…',
+}
+
+/** The line under the button while a send runs. */
+const SEND_HINT: Readonly<Record<SendStage, (wallet: string) => string>> = {
+  simulating: () => CHECKING_SEND,
+  signing: (wallet) => `Approve it in ${wallet}. Once signed, it lands on the Hub in a few seconds.`,
+  broadcasting: () => 'Signed. Waiting for the Hub to put it in a block…',
+}
 
 export function ReviewStep() {
   const { deployment, hubWallet, ethWallet, hubWriter } = useBridge()
@@ -45,7 +61,8 @@ export function ReviewStep() {
   const send = useSendKids()
   const sending = send.status === 'pending'
   const walletName = hubWallet.walletName ?? 'your wallet'
-  const signed = useSignedWhile(sending)
+  // null only for the moment before the writer reports its first stage
+  const stage: SendStage | null = sending ? (send.stage ?? 'simulating') : null
 
   const inputId = useId()
   const hintId = useId()
@@ -80,7 +97,6 @@ export function ReviewStep() {
 
   const onSend = async () => {
     if (disabled || !address) return
-    signed.reset()
     try {
       const result = await send.run(ids, address)
       update({ sent: { ids, recipient: address, txHash: result.txHash }, picked: [], claimTx: null })
@@ -105,13 +121,7 @@ export function ReviewStep() {
     blockingKid !== undefined && ids.includes(blockingKid) && n > 1 && (blockingError?.code === 'AlreadyBridged' || blockingError?.code === 'NotOwner')
 
   // checking → "Check Keplr…" → sending → the crossing screen
-  const label = sending
-    ? signed.done
-      ? 'Sending…'
-      : `Check ${walletName}…`
-    : reason === CHECKING_SEND
-      ? 'Checking…'
-      : `Send ${n} ${kidWord(n)}`
+  const label = stage ? SEND_LABEL[stage](walletName) : reason === CHECKING_SEND ? 'Checking…' : `Send ${n} ${kidWord(n)}`
   const mightHaveLanded = send.error !== null && !errorCopy(send.error, { action: 'send' }).safe
 
   return (
@@ -230,37 +240,14 @@ export function ReviewStep() {
         </p>
       ) : (
         <p className="hint">
-          {sending
-            ? signed.done
-              ? 'Signed. Waiting for the Hub to put it in a block…'
-              : `Approve it in ${walletName}. Once signed, it lands on the Hub in a few seconds.`
+          {stage
+            ? SEND_HINT[stage](walletName)
             : `${walletName === 'your wallet' ? 'Your wallet' : walletName} asks you to sign once${n > 1 ? `, for all ${n} kids` : ''}.`}
           {estimate.data && !estimate.error && <> ≈ {formatFee(estimate.data)} network fee.</>}
         </p>
       )}
     </>
   )
-}
-
-/**
- * Guesses when the wallet prompt was approved: the page loses focus when the wallet's popup opens and gets it
- * back when the popup closes, while the send is still waiting for its block. The writer has no "signed"
- * callback, so this only changes a label. Wallets without a popup just stay on "Check Keplr…".
- */
-function useSignedWhile(pending: boolean): { done: boolean; reset: () => void } {
-  const [phase, setPhase] = useState<'idle' | 'away' | 'back'>('idle')
-  useEffect(() => {
-    if (!pending) return
-    const away = () => setPhase('away')
-    const back = () => setPhase((p) => (p === 'away' ? 'back' : p))
-    window.addEventListener('blur', away)
-    window.addEventListener('focus', back)
-    return () => {
-      window.removeEventListener('blur', away)
-      window.removeEventListener('focus', back)
-    }
-  }, [pending])
-  return { done: pending && phase === 'back', reset: () => setPhase('idle') }
 }
 
 function RecipientHint({

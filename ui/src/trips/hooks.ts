@@ -6,17 +6,18 @@
 // in QueryState.error beside the data that did load.
 
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query'
-import { useMemo, useSyncExternalStore } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { useBridge } from '../chain/context'
 import {
   BridgeError,
   toBridgeError,
-  type ClaimResult,
+  type ClaimStage,
   type EthAddress,
   type KidId,
   type SendEstimate,
   type SendInfo,
   type SendResult,
+  type SendStage,
 } from '../chain/types'
 import { isLive } from '../config/deployments'
 import { compareTrips, isFinal } from './derive'
@@ -24,7 +25,19 @@ import { idsKey, isKidId, discoverTrips, loadHealth, loadOwned, loadTrips, seede
 import { keys, LIVE_POLL_MS, POLL_MS, type TripQueryKey } from './keys'
 import { checkConfig, notLive } from './sanity'
 import { rememberedTrips, rememberTrips, subscribeRemembered } from './storage'
-import type { ConfigSanity, Health, MutationState, QueryState, Trip, TripOptions, TripQuery } from './types'
+import type {
+  ClaimKidsOptions,
+  ClaimKidsState,
+  ConfigSanity,
+  Health,
+  MutationState,
+  QueryState,
+  SendKidsOptions,
+  SendKidsState,
+  Trip,
+  TripOptions,
+  TripQuery,
+} from './types'
 
 export { LIVE_POLL_MS, POLL_MS } from './keys'
 export { describeConfigProblem } from './sanity'
@@ -121,49 +134,63 @@ export function useHealth(options?: TripOptions): QueryState<Health> {
  *   (`catching-up`, or `locked` if Ethereum's client hasn't been read yet), and the pick screen shows them sent;
  * - refreshes owned kids and every trip list.
  * Rejects with a BridgeError; bookkeeping after a successful send never makes it reject.
+ * `stage` says where a running send is (simulating → signing → broadcasting); `options.onStage` hears the same.
  */
-export function useSendKids(): MutationState<[ids: readonly KidId[], recipient: EthAddress], SendResult> {
+export function useSendKids(options?: SendKidsOptions): SendKidsState {
   const ctx = useCtx()
   const { hubWriter } = useBridge()
-  return toMutationState(
-    useMutation({
-      mutationFn: async ([ids, recipient]: [readonly KidId[], EthAddress]) => {
-        if (!hubWriter) throw new BridgeError('Unknown', 'Hub wallet not connected')
-        if (ids.length === 0) throw new BridgeError('Unknown', 'no kids picked')
-        const result = await hubWriter.send(ids, recipient)
-        try {
-          afterSend(ctx, hubWriter.address, [...new Set(ids)], recipient, result)
-        } catch {
-          // the kids are on their way whatever happens here; the next poll finds them
-        }
-        return result
-      },
-    }),
-  )
+  const [stage, setStage] = useState<SendStage | null>(null)
+  const onStage = useLatest(options?.onStage)
+  const m = useMutation({
+    mutationFn: async ([ids, recipient]: [readonly KidId[], EthAddress]) => {
+      setStage(null)
+      if (!hubWriter) throw new BridgeError('Unknown', 'Hub wallet not connected')
+      if (ids.length === 0) throw new BridgeError('Unknown', 'no kids picked')
+      const report = (s: SendStage) => {
+        setStage(s)
+        onStage.current?.(s)
+      }
+      const result = await hubWriter.send(ids, recipient, { onStage: report })
+      try {
+        afterSend(ctx, hubWriter.address, [...new Set(ids)], recipient, result)
+      } catch {
+        // the kids are on their way whatever happens here; the next poll finds them
+      }
+      return result
+    },
+  })
+  return { ...toMutationState(m), stage: m.status === 'pending' ? stage : null }
 }
 
 /**
  * Claims proven kids from the connected Ethereum wallet (one tx for any number). Once mined, the claimed kids
  * show as home at once (owner = their recipient), and every trip is re-read to confirm.
+ * `stage` says where a running claim is (signing → confirming); `options.onStage` hears the same.
  */
-export function useClaimKids(): MutationState<[ids: readonly KidId[]], ClaimResult> {
+export function useClaimKids(options?: ClaimKidsOptions): ClaimKidsState {
   const ctx = useCtx()
   const { ethWriter } = useBridge()
-  return toMutationState(
-    useMutation({
-      mutationFn: async ([ids]: [readonly KidId[]]) => {
-        if (!ethWriter) throw new BridgeError('Unknown', 'Ethereum wallet not connected')
-        if (ids.length === 0) throw new BridgeError('Unknown', 'no kids to claim')
-        const result = await ethWriter.claim(ids)
-        try {
-          afterClaim(ctx, [...new Set(ids)])
-        } catch {
-          // minted either way; the next poll shows it
-        }
-        return result
-      },
-    }),
-  )
+  const [stage, setStage] = useState<ClaimStage | null>(null)
+  const onStage = useLatest(options?.onStage)
+  const m = useMutation({
+    mutationFn: async ([ids]: [readonly KidId[]]) => {
+      setStage(null)
+      if (!ethWriter) throw new BridgeError('Unknown', 'Ethereum wallet not connected')
+      if (ids.length === 0) throw new BridgeError('Unknown', 'no kids to claim')
+      const report = (s: ClaimStage) => {
+        setStage(s)
+        onStage.current?.(s)
+      }
+      const result = await ethWriter.claim(ids, { onStage: report })
+      try {
+        afterClaim(ctx, [...new Set(ids)])
+      } catch {
+        // minted either way; the next poll shows it
+      }
+      return result
+    },
+  })
+  return { ...toMutationState(m), stage: m.status === 'pending' ? stage : null }
 }
 
 /** Simulates sending `ids` to `recipient` from the connected Hub wallet. Idle until all three exist. */
@@ -221,6 +248,15 @@ export function useRememberedTrips(): KidId[] {
 }
 
 // ---- internals ----
+
+/** A ref that always holds the latest `value`, for callbacks that outlive the render that made them. */
+function useLatest<T>(value: T): RefObject<T> {
+  const ref = useRef(value)
+  useLayoutEffect(() => {
+    ref.current = value
+  })
+  return ref
+}
 
 function useCtx(): Ctx {
   const { deployment, hub, eth } = useBridge()

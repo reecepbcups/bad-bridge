@@ -134,7 +134,9 @@ describe.skipIf(!hasAnvil)('claim on an anvil mainnet fork', () => {
   })
 
   it('claims several kids in one Multicall3 transaction', async () => {
-    const { txHash } = await writer().claim([7, 8])
+    const stages: string[] = []
+    const { txHash } = await writer().claim([7, 8], { onStage: (s) => stages.push(s) })
+    expect(stages).toEqual(['signing', 'confirming'])
     const tx = await publicClient.getTransaction({ hash: txHash })
     expect(tx.to?.toLowerCase()).toBe(MULTICALL3.toLowerCase())
     expect(await ownerOf(7)).toBe(RECIPIENT)

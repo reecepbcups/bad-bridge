@@ -74,7 +74,11 @@ export function WalletOptions({ chain, onConnected }: { chain: Chain; onConnecte
           )
         })}
       </ul>
-      {wallet.options.length === 0 && <p className="muted">No wallets found in this browser.</p>}
+      {wallet.options.length === 0 && (
+        <p className="muted" role="status">
+          {wallet.status === 'connecting' ? 'Looking for wallets…' : 'No wallets found in this browser.'}
+        </p>
+      )}
       {failure && <ErrorNote error={failure.error} action="connect" walletName={failure.name} />}
     </div>
   )

@@ -1,8 +1,9 @@
-import { fromBech32 } from '@cosmjs/encoding'
 import { bytesToHex } from 'viem'
 import type { Deployment } from '../../config/deployments'
+import { decodeBech32 } from '../bech32'
 import {
   BridgeError,
+  stageReporter,
   toBridgeError,
   type EthAddress,
   type EthReader,
@@ -70,7 +71,7 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
     bridgeEscrow: () =>
       read(() => {
         if (!escrow) throw new BridgeError('NotLive', 'no escrow in this deployment')
-        return bytesToHex(fromBech32(escrow).data)
+        return bytesToHex(decodeBech32(escrow).data)
       }),
   }
 
@@ -81,9 +82,19 @@ export function createDemoHubWriter(sim: DemoSim, address: HubAddress): HubWrite
   return {
     address,
     simulateSend: (ids, recipient) => later(sim.timeline.latencyMs, () => sim.simulateSend(address, ids, recipient)),
-    send: async (ids, recipient) => {
-      await later(sim.timeline.latencyMs, () => sim.simulateSend(address, ids, recipient))
-      return later(sim.timeline.signMs, () => sim.commitSend(address, ids, recipient))
+    send: async (ids, recipient, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        stage.report('simulating')
+        await later(sim.timeline.latencyMs, () => sim.simulateSend(address, ids, recipient))
+        // the "wallet prompt": a declined signature fails here, before anything is broadcast
+        stage.report('signing')
+        await later(sim.timeline.signMs, () => sim.signSend())
+        stage.report('broadcasting')
+        return await later(sim.timeline.latencyMs, () => sim.commitSend(address, ids, recipient))
+      } finally {
+        stage.done()
+      }
     },
   }
 }
@@ -91,7 +102,19 @@ export function createDemoHubWriter(sim: DemoSim, address: HubAddress): HubWrite
 export function createDemoEthWriter(sim: DemoSim, address: EthAddress): EthWriter {
   return {
     address,
-    claim: (ids) => later(sim.timeline.signMs, () => sim.claim(ids)),
+    claim: async (ids, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        stage.report('signing')
+        const result = await later(sim.timeline.signMs, () => sim.claim(ids))
+        // mined as soon as it's signed in the sim; the pause is the block
+        stage.report('confirming')
+        await delay(sim.timeline.latencyMs)
+        return result
+      } finally {
+        stage.done()
+      }
+    },
   }
 }
 

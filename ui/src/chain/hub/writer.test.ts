@@ -252,6 +252,56 @@ describe('send', () => {
     expect(isBridgeError(err) && err.detail).toContain(hash)
   })
 
+  it('reports simulating, signing, broadcasting in order, signing only once the simulate passed', async () => {
+    const wallet = await DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos')
+    const address = (await wallet.getAccounts())[0]?.address ?? ''
+    const { fetch, seen } = chain({ pendingPolls: 1 })
+    const stages: { stage: string; simulated: number; broadcast: number }[] = []
+    await writer(fetch, { address, signer: wallet }).send([1], RECIPIENT, {
+      onStage: (stage) => stages.push({ stage, simulated: seen.simulated.length, broadcast: seen.broadcast.length }),
+    })
+    expect(stages).toEqual([
+      { stage: 'simulating', simulated: 0, broadcast: 0 },
+      { stage: 'signing', simulated: 1, broadcast: 0 },
+      { stage: 'broadcasting', simulated: 1, broadcast: 0 },
+    ])
+  })
+
+  it('a failed simulate reports only simulating', async () => {
+    const { fetch } = chain({ simulate: () => chainError('failed to execute message; message index: 0: token 1 already bridged') })
+    const stages: string[] = []
+    const signer = vi.fn(() => DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos'))
+    await expect(codeOf(writer(fetch, { signer }).send([1], RECIPIENT, { onStage: (s) => stages.push(s) }))).resolves.toMatchObject({
+      code: 'AlreadyBridged',
+    })
+    expect(stages).toEqual(['simulating'])
+  })
+
+  it('a declined signature stops at signing', async () => {
+    const { fetch } = chain()
+    const signer: OfflineDirectSigner = {
+      getAccounts: () => Promise.resolve([{ address: REECE, algo: 'secp256k1', pubkey: fromBase64(ON_CHAIN_PUBKEY) }]),
+      signDirect: () => Promise.reject(new Error('Request rejected')),
+    }
+    const stages: string[] = []
+    await expect(codeOf(writer(fetch, { signer }).send([1], RECIPIENT, { onStage: (s) => stages.push(s) }))).resolves.toMatchObject({
+      code: 'UserRejected',
+    })
+    expect(stages).toEqual(['simulating', 'signing'])
+  })
+
+  it('a callback that throws never breaks the send', async () => {
+    const wallet = await DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos')
+    const address = (await wallet.getAccounts())[0]?.address ?? ''
+    const { fetch, seen } = chain({ included: { height: 42 } })
+    const onStage = vi.fn(() => {
+      throw new Error('bad listener')
+    })
+    await expect(writer(fetch, { address, signer: wallet }).send([1], RECIPIENT, { onStage })).resolves.toMatchObject({ height: 42 })
+    expect(onStage).toHaveBeenCalledTimes(3)
+    expect(seen.broadcast).toHaveLength(1)
+  })
+
   it('without a signer, send rejects after simulating', async () => {
     const { fetch, calls } = chain()
     await expect(codeOf(writer(fetch).send([1], RECIPIENT))).resolves.toMatchObject({ code: 'Unknown' })

@@ -1,4 +1,4 @@
-import { fromBech32 } from '@cosmjs/encoding'
+import { decodeBech32 } from '../chain/bech32'
 import { checkRecipient } from '../chain/eth/recipient'
 import type { EthAddress, HubAddress, KidId } from '../chain/types'
 
@@ -40,7 +40,7 @@ export function parseLookup(input: string, hubPrefix = 'cosmos'): Lookup {
 
   if (value.toLowerCase().startsWith(`${hubPrefix}1`)) {
     try {
-      const { prefix } = fromBech32(value)
+      const { prefix } = decodeBech32(value)
       if (prefix === hubPrefix) return { kind: 'hub', address: value.toLowerCase() }
     } catch {
       // fall through

@@ -1,6 +1,7 @@
 import { useBridge } from '../../../chain/context'
 import { useClaimKids } from '../../../trips/hooks'
 import type { Trip } from '../../../trips/types'
+import { claimingHint, claimingLabel } from '../../Claim'
 import { ConnectButton } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
 import { kidList, kidWord, shortAddress } from '../../format'
@@ -32,7 +33,8 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
   const already = trips.filter((t) => sent.ids.includes(t.tokenId) && t.stage === 'home-eth').map((t) => t.tokenId)
   const n = ready.length
   const pending = claim.status === 'pending'
-  const walletName = ethWallet.walletName ?? 'your wallet'
+  // null only for the moment before the writer reports its first stage
+  const stage = pending ? (claim.stage ?? 'signing') : null
 
   const onClaim = async () => {
     if (pending || n === 0) return
@@ -70,10 +72,15 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
           <SwitchChain />
         ) : (
           <button type="button" className="btn eth" disabled={pending || n === 0} onClick={() => void onClaim()}>
-            {pending ? `Check ${walletName}…` : `Claim ${n} ${kidWord(n)}`}
+            {stage ? claimingLabel(stage, ethWallet.walletName) : `Claim ${n} ${kidWord(n)}`}
           </button>
         )}
       </div>
+      {stage && (
+        <p className="hint center" role="status">
+          {claimingHint(stage, ethWallet.walletName)}
+        </p>
+      )}
       {claim.error && (
         <>
           <ErrorNote error={claim.error} action="claim" walletName={ethWallet.walletName} />

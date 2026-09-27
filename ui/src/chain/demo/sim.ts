@@ -318,6 +318,11 @@ export class DemoSim {
     return { gas, amount: String(Math.ceil(gas * 0.005)), denom: 'uatom' }
   }
 
+  /** The wallet half of a send: throws a failure injected for signing (UserRejected…), if there is one. */
+  signSend(): void {
+    this.takeFailure('sign')
+  }
+
   /** The broadcast half of a send; the adapter simulates and waits for the "signature" first. */
   commitSend(sender: HubAddress, ids: readonly KidId[], recipient: EthAddress): SendResult {
     this.takeFailure('sign')

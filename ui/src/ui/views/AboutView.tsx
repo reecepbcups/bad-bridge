@@ -1,5 +1,5 @@
 import { useBridge } from '../../chain/context'
-import { useHealth } from '../../trips/hooks'
+import { useConfigSanity, useHealth } from '../../trips/hooks'
 import { Card } from '../chrome/Card'
 import { aboutMinutes, blockNumber } from '../format'
 import { useChangedAt, useWallClock } from '../hooks'
@@ -176,6 +176,7 @@ export function AboutView() {
             </a>
           </dd>
         </dl>
+        <ContractsCheck />
         {deployment.demo ? (
           <p className="note">
             This is the demo: nothing here touches a real chain. The addresses are the test deployment (ReeceBadTest).
@@ -185,6 +186,26 @@ export function AboutView() {
         ) : null}
       </div>
     </Card>
+  )
+}
+
+/** The startup sanity check, said out loud: the contracts above are the ones the chains say they are. */
+function ContractsCheck() {
+  const { deployment } = useBridge()
+  const sanity = useConfigSanity()
+  const s = sanity.data
+  if (s?.status === 'not-live') return null
+  return (
+    <p className={s?.ok ? 'contracts-check ok' : s?.status === 'mismatch' ? 'contracts-check bad' : 'contracts-check muted'} role="status">
+      {s?.ok
+        ? `✓ Checked live: the escrow only takes ${deployment.collectionName}, and the Ethereum bridge only trusts this escrow.`
+        : s?.status === 'mismatch'
+          ? "✗ These don't match what the chains say, so sending is switched off."
+          : s || sanity.error
+            ? "Couldn't double-check these against the chains just now."
+            : 'Double-checking these against the chains…'}
+      {/* COPY: contracts check */}
+    </p>
   )
 }
 
@@ -217,6 +238,10 @@ function HealthStrip() {
             : `Ethereum is ${aboutMinutes(h.lagMinutes)} behind the Hub`}
         <span className="muted mono"> ({blockNumber(h.lagBlocks)} blocks)</span>
         {/* COPY: health strip */}
+      </span>
+      <span className="muted heights">
+        Hub block <span className="mono">{blockNumber(h.hubHeight)}</span> · Ethereum has seen{' '}
+        <span className="mono">{blockNumber(h.clientHeight)}</span>
       </span>
       {!health.error && <span className="muted">checked {ago}</span>}
     </div>

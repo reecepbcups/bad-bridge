@@ -1,4 +1,4 @@
-import { fromBech32 } from '@cosmjs/encoding'
+import { decodeBech32 } from '../chain/bech32'
 import { bytesToHex, type Hex } from 'viem'
 import type { HubAddress } from '../chain/types'
 import { isLive, type Deployment } from '../config/deployments'
@@ -13,7 +13,7 @@ const BYTES32 = /^0x[0-9a-fA-F]{64}$/
 /** The deployment's escrow as the raw 32 bytes bridge.ESCROW() should hold, or null if it isn't a 32-byte bech32 address. */
 export function escrowBytes32(escrow: HubAddress): Hex | null {
   try {
-    const { data } = fromBech32(escrow)
+    const { data } = decodeBech32(escrow)
     return data.length === 32 ? bytesToHex(data) : null
   } catch {
     return null

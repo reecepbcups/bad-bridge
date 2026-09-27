@@ -114,22 +114,76 @@ export interface EthReader {
   bridgeEscrow(): Promise<Hex>
 }
 
+/**
+ * Where a Hub send is, in order:
+ * - `simulating`: checking the tx with the Hub. The wallet isn't open yet.
+ * - `signing`: the wallet prompt is up, waiting for the user.
+ * - `broadcasting`: signed; handing it to the Hub and waiting for a block.
+ */
+export type SendStage = 'simulating' | 'signing' | 'broadcasting'
+
+/** Options for HubWriter.send. */
+export interface SendOptions {
+  /** Called as the send reaches each stage. Never called after the promise settles; a callback that throws is ignored. */
+  onStage?: (stage: SendStage) => void
+}
+
+/**
+ * Where an Ethereum claim is, in order:
+ * - `signing`: re-checked and simulated; the wallet prompt is up.
+ * - `confirming`: signed and sent; waiting for it to be mined.
+ */
+export type ClaimStage = 'signing' | 'confirming'
+
+/** Options for EthWriter.claim. */
+export interface ClaimOptions {
+  /** Called as the claim reaches each stage. Never called after the promise settles; a callback that throws is ignored. */
+  onStage?: (stage: ClaimStage) => void
+}
+
 /** Hub transactions, bound to the connected Hub wallet. */
 export interface HubWriter {
   /** The signing account. */
   address: HubAddress
   /** Simulates one tx that sends every kid to the escrow. Never opens the wallet. */
   simulateSend(ids: readonly KidId[], recipient: EthAddress): Promise<SendEstimate>
-  /** Simulates, then signs and broadcasts one tx with a send_nft per kid. Resolves once it's in a block. */
-  send(ids: readonly KidId[], recipient: EthAddress): Promise<SendResult>
+  /**
+   * Simulates, then signs and broadcasts one tx with a send_nft per kid. Resolves once it's in a block.
+   * `options.onStage` reports simulating → signing → broadcasting.
+   */
+  send(ids: readonly KidId[], recipient: EthAddress, options?: SendOptions): Promise<SendResult>
 }
 
 /** Ethereum transactions, bound to the connected Ethereum wallet. */
 export interface EthWriter {
   /** The sending account. Who claims doesn't matter: kids always mint to their proven recipient. */
   address: EthAddress
-  /** Mints proven kids: claim(id) for one, Multicall3 aggregate3 for several. Resolves once mined. */
-  claim(ids: readonly KidId[]): Promise<ClaimResult>
+  /**
+   * Mints proven kids: claim(id) for one, Multicall3 aggregate3 for several. Resolves once mined.
+   * `options.onStage` reports signing → confirming.
+   */
+  claim(ids: readonly KidId[], options?: ClaimOptions): Promise<ClaimResult>
+}
+
+/**
+ * Wraps an onStage callback so the writers can call it freely: it's optional, a throw never reaches the
+ * transaction, and it goes quiet once the write settles (call `done()`).
+ */
+export function stageReporter<S>(onStage: ((stage: S) => void) | undefined): { report: (stage: S) => void; done: () => void } {
+  let open = onStage !== undefined
+  return {
+    report(stage) {
+      if (!open) return
+      try {
+        onStage?.(stage)
+      } catch {
+        // progress is cosmetic: never let it break a transaction
+      }
+    },
+    done() {
+      open = false
+    },
+  }
 }
 
 /** Everything an adapter can fail with. The UI maps each code to kid-friendly copy. */

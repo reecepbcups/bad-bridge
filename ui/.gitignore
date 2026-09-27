@@ -5,6 +5,7 @@ coverage/
 playwright-report/
 blob-report/
 test-results/
+test-results-live/
 playwright/.cache/
 *.tsbuildinfo
 *.local

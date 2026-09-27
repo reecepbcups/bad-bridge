@@ -135,13 +135,23 @@ export function KidsView({ address }: { address?: string }) {
 
       <div className="row foot">
         <p className="note">
-          {lookup?.kind === 'hub' ? 'Found by Hub address' : 'Found by your Ethereum address'}, so it works from any device.
-          Checks again every {Math.round(POLL_MS / 1000)} seconds.
+          {foundBy(lookup, mine, connectedEth, connectedHub)} Checks again every {Math.round(POLL_MS / 1000)} seconds.
         </p>
         {shareAddress && <ShareLink hash={href({ name: 'kids', address: shareAddress })} />}
       </div>
     </Card>
   )
+}
+
+// COPY: tracker footnote
+/** How the list was found, so nobody's told a stranger's address is theirs. */
+function foundBy(lookup: Lookup | null, mine: boolean, eth: string | undefined, hub: string | undefined): string {
+  const anywhere = 'so it works from any device.'
+  if (lookup?.kind === 'hub') return `Found by ${mine ? 'your ' : ''}Hub address, ${anywhere}`
+  if (lookup?.kind === 'eth') return `Found by ${mine ? 'your ' : ''}Ethereum address, ${anywhere}`
+  if (eth) return `Found by your Ethereum address, ${anywhere}`
+  if (hub) return `Found by your Hub address, ${anywhere}`
+  return 'Kids sent from this browser. Look up an address to see them from any device.'
 }
 
 function LookupBox({ initial }: { initial: string }) {

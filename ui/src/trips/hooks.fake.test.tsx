@@ -535,7 +535,7 @@ describe('useSendKids', () => {
     hub.ownedKids.mockImplementation(() => new Promise(() => undefined))
     const sent = await act(() => result.current.send.run([11, 10], ALICE))
     expect(sent).toEqual({ txHash: 'AB'.repeat(32), height: NOW_HEIGHT })
-    expect(hubWriter.send).toHaveBeenCalledWith([11, 10], ALICE)
+    expect(hubWriter.send).toHaveBeenCalledWith([11, 10], ALICE, { onStage: expect.any(Function) as unknown })
 
     // the pick screen shows them sent right away
     await waitFor(() => expect(result.current.owned.data?.find((t) => t.tokenId === 10)?.stage).toBe('catching-up'))
@@ -583,6 +583,55 @@ describe('useSendKids', () => {
     expect(rememberedTrip(LIVE_ID, 10)).toBeUndefined()
   })
 
+  it('tracks the stage while a send runs and passes each one to onStage', async () => {
+    const chain = everyStage()
+    chain.owned.set(HUB_A, [10])
+    const hubWriter = fakeHubWriter(chain, HUB_A)
+    let finish: () => void = () => undefined
+    hubWriter.send.mockImplementationOnce((_ids, _recipient, options) => {
+      options?.onStage?.('simulating')
+      options?.onStage?.('signing')
+      return new Promise((resolve) => {
+        finish = () => {
+          options?.onStage?.('broadcasting')
+          resolve({ txHash: 'AB'.repeat(32), height: NOW_HEIGHT })
+        }
+      })
+    })
+    const heard: string[] = []
+    const { wrapper } = fakeBridge(chain, { hubWriter })
+    const { result } = renderHook(() => useSendKids({ onStage: (s) => heard.push(s) }), { wrapper })
+    expect(result.current.stage).toBeNull()
+
+    let sent: Promise<unknown> = Promise.resolve()
+    act(() => {
+      sent = result.current.run([10], ALICE)
+    })
+    await waitFor(() => expect(result.current.stage).toBe('signing'))
+    expect(result.current.status).toBe('pending')
+    await act(async () => {
+      finish()
+      await sent
+    })
+    expect(heard).toEqual(['simulating', 'signing', 'broadcasting'])
+    await waitFor(() => expect(result.current.status).toBe('success'))
+    expect(result.current.stage).toBeNull()
+  })
+
+  it('clears the stage when the send fails', async () => {
+    const chain = everyStage()
+    const hubWriter = fakeHubWriter(chain, HUB_A)
+    hubWriter.send.mockImplementationOnce((_ids, _recipient, options) => {
+      options?.onStage?.('signing')
+      return Promise.reject(new BridgeError('UserRejected'))
+    })
+    const { wrapper } = fakeBridge(chain, { hubWriter })
+    const { result } = renderHook(() => useSendKids(), { wrapper })
+    await act(() => expect(result.current.run([10], ALICE)).rejects.toMatchObject({ code: 'UserRejected' }))
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.stage).toBeNull()
+  })
+
   it('rejects without a Hub wallet', async () => {
     const { wrapper } = fakeBridge(everyStage())
     const { result } = renderHook(() => useSendKids(), { wrapper })
@@ -603,7 +652,7 @@ describe('useClaimKids', () => {
     // stall the confirming re-read, so only the optimistic update can explain what shows
     eth.kidStatus.mockImplementation(() => new Promise(() => undefined))
     await act(() => result.current.claim.run([3]))
-    expect(ethWriter.claim).toHaveBeenCalledWith([3])
+    expect(ethWriter.claim).toHaveBeenCalledWith([3], { onStage: expect.any(Function) as unknown })
     await waitFor(() => expect(result.current.one.data).toMatchObject({ stage: 'home-eth', owner: ALICE }))
     expect(result.current.list.data?.find((t) => t.tokenId === 3)).toMatchObject({ stage: 'home-eth', owner: ALICE })
     expect(result.current.list.data?.[0]?.stage).not.toBe('home-eth') // re-sorted: home kids go last
@@ -633,6 +682,34 @@ describe('useClaimKids', () => {
     await waitFor(() => expect(result.current.one.data?.stage).toBe('ready'))
     await act(() => result.current.claim.run([3]))
     await waitFor(() => expect(result.current.one.data?.stage).toBe('ready'))
+  })
+
+  it('tracks the stage while a claim runs and passes each one to onStage', async () => {
+    const chain = everyStage()
+    const ethWriter = fakeEthWriter(chain, ALICE)
+    let finish: () => void = () => undefined
+    ethWriter.claim.mockImplementationOnce((_ids, options) => {
+      options?.onStage?.('signing')
+      options?.onStage?.('confirming')
+      return new Promise((resolve) => {
+        finish = () => resolve({ txHash: `0x${'cd'.repeat(32)}` })
+      })
+    })
+    const heard: string[] = []
+    const { wrapper } = fakeBridge(chain, { ethWriter })
+    const { result } = renderHook(() => useClaimKids({ onStage: (s) => heard.push(s) }), { wrapper })
+    let claimed: Promise<unknown> = Promise.resolve()
+    act(() => {
+      claimed = result.current.run([3])
+    })
+    await waitFor(() => expect(result.current.stage).toBe('confirming'))
+    await act(async () => {
+      finish()
+      await claimed
+    })
+    expect(heard).toEqual(['signing', 'confirming'])
+    await waitFor(() => expect(result.current.status).toBe('success'))
+    expect(result.current.stage).toBeNull()
   })
 
   it('rejects without an Ethereum wallet', async () => {
