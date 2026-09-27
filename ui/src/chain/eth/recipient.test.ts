@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { checkRecipient } from './recipient'
 
 const CHECKSUMMED = '0xD2C392084761cb6E44c544B6f39dcc001fDe9775'
+const OTHER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 
 describe('checkRecipient', () => {
   it('accepts checksummed, all-lower and all-upper addresses', () => {
@@ -17,7 +18,41 @@ describe('checkRecipient', () => {
     expect(checkRecipient('0xd2C392084761cb6E44c544B6f39dcc001fDe9775')).toEqual({ ok: false, reason: 'checksum' })
   })
 
+  it('checks the format strictly', () => {
+    for (const input of [
+      '',
+      '0x',
+      `${CHECKSUMMED}0`, // 41 hex chars
+      CHECKSUMMED.slice(0, -1), // 39
+      `0X${CHECKSUMMED.slice(2)}`, // uppercase prefix
+      `0x${CHECKSUMMED.slice(2, -1)}g`, // not hex
+      'vitalik.eth',
+      `0x ${CHECKSUMMED.slice(2)}`,
+    ]) {
+      expect(checkRecipient(input), input).toEqual({ ok: false, reason: 'format' })
+    }
+  })
+
+  it('rejects the zero address in any case, before checksum', () => {
+    expect(checkRecipient(`  0x${'0'.repeat(40)}  `)).toEqual({ ok: false, reason: 'zero' })
+  })
+
+  it('only enforces EIP-55 on mixed case', () => {
+    // one flipped letter in an otherwise valid checksum
+    expect(checkRecipient('0xD2C392084761cb6E44c544B6f39dcc001fDe9775'.replace('D2C', 'd2C'))).toEqual({ ok: false, reason: 'checksum' })
+    expect(checkRecipient(OTHER.replace('C51', 'c51'))).toEqual({ ok: false, reason: 'checksum' })
+    // all-lower and all-upper bodies carry no checksum, so they pass and come back checksummed
+    expect(checkRecipient(OTHER.toLowerCase())).toMatchObject({ ok: true, address: OTHER })
+    expect(checkRecipient(`0x${OTHER.slice(2).toUpperCase()}`)).toMatchObject({ ok: true, address: OTHER })
+  })
+
   it('knows the connected wallet whatever the case', () => {
     expect(checkRecipient(CHECKSUMMED, CHECKSUMMED.toLowerCase() as `0x${string}`)).toMatchObject({ ok: true, isConnected: true })
+    expect(checkRecipient(CHECKSUMMED.toLowerCase(), CHECKSUMMED)).toMatchObject({ ok: true, isConnected: true })
+  })
+
+  it('says when it is not the connected wallet, or when none is connected', () => {
+    expect(checkRecipient(CHECKSUMMED, OTHER)).toEqual({ ok: true, address: CHECKSUMMED, isConnected: false })
+    expect(checkRecipient(CHECKSUMMED, undefined)).toEqual({ ok: true, address: CHECKSUMMED, isConnected: false })
   })
 })

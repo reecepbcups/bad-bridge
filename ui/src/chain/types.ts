@@ -144,6 +144,8 @@ export type BridgeErrorCode =
   | 'ZeroRecipient'
   /** escrow: this kid already has a record */
   | 'AlreadyBridged'
+  /** cw721: the sending wallet doesn't own this kid (moved since the list loaded, or no such token) */
+  | 'NotOwner'
   /** bridge: claim before the proof landed */
   | 'NotProven'
   /** wallet: the user declined */
@@ -200,6 +202,8 @@ export interface WalletOption {
   name: string
   /** The extension is present. Always true for WalletConnect-style options. */
   installed: boolean
+  /** Logo the wallet announced (EIP-6963 data URI), when there is one. */
+  icon?: string
 }
 
 /** One chain's wallet connection. Same shape for the Hub and Ethereum. */
@@ -216,4 +220,8 @@ export interface WalletState<A extends string = string> {
   connect(id: string): Promise<void>
   /** Disconnects. Never rejects. */
   disconnect(): Promise<void>
+  /** Connected, but on another network, so writes refuse with WrongChain. Ethereum only; unset elsewhere. */
+  wrongChain?: boolean
+  /** Asks the wallet to move to the deployment's network. Rejects with a BridgeError (UserRejected, WrongChain). Ethereum only. */
+  switchChain?: () => Promise<void>
 }

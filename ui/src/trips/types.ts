@@ -5,7 +5,9 @@ import type { BridgeError, EthAddress, HubAddress, KidId } from '../chain/types'
 
 /**
  * Where a kid is on its trip. Rebuilt from chain state every time (see derive.ts and PLAN.md's state table).
- * `crossing` means the record exists but the send height Hs is unknown, so stages 2 and 3 can't be told apart.
+ * - `locked`: the record exists and Hs is known, but Ethereum's client hasn't been read yet (first load, or
+ *   every Ethereum read failed). A fallback, not a step: normal reads go straight to `catching-up`.
+ * - `crossing`: the record exists but the send height Hs is unknown, so stages 2 and 3 can't be told apart.
  */
 export type Stage = 'home-hub' | 'locked' | 'catching-up' | 'proving' | 'ready' | 'home-eth' | 'crossing'
 
@@ -27,10 +29,24 @@ export interface Trip {
   sender?: HubAddress
   /** Current Ethereum owner once minted. Can differ from recipient after a transfer. */
   owner?: EthAddress
-  /** catching-up only: Hub blocks until Ethereum's client passes Hs. */
+  /** catching-up only: Hub blocks until Ethereum's client passes Hs (Hs + 1 - client height, at least 1). */
   blocksToGo?: number
-  /** proving for more than 30 minutes: the batcher looks stuck. */
+  /**
+   * proving only: when this browser first saw the kid proving. The checkpoint passed at or before this
+   * (there are no client events to tell exactly), so "proving for at least now - provingSince".
+   */
+  provingSince?: Date
+  /**
+   * Seen proving for more than 30 minutes (see provingSince): the batcher looks stuck. Never set while the
+   * client is frozen, since then nothing can be proven and the site-wide "paused" state explains it.
+   */
   stuck: boolean
+}
+
+/** Options for the trip hooks. */
+export interface TripOptions {
+  /** Poll every ~10s instead of 30s, for the crossing screen. */
+  live?: boolean
 }
 
 /** How far behind Ethereum's view of the Hub is. Drives "Ethereum is N min behind" and the paused banner. */
@@ -41,12 +57,17 @@ export interface Health {
   clientHeight: number
   /** hubHeight - clientHeight, never negative. */
   lagBlocks: number
-  /** lagBlocks in minutes at the Hub's block time. */
+  /** lagBlocks in minutes at the Hub's measured block time. */
   lagMinutes: number
   /** Light client frozen: sending is disabled site-wide. */
   frozen: boolean
-  /** The last refresh failed, so these numbers are old. */
+  /**
+   * Don't trust "N min behind": Ethereum is over 3 hours behind, or the last client or Hub read failed and
+   * these numbers are old (QueryState.error says why).
+   */
   stale: boolean
+  /** Average Hub block time in seconds, measured over the last 1000 blocks (deployment default if that failed). */
+  avgBlockSeconds?: number
 }
 
 /** Which trips to find. Fields combine (union). An empty query finds nothing. */
@@ -60,20 +81,34 @@ export interface TripQuery {
 }
 
 /** A startup sanity check that failed. Any problem hard-disables sending. */
-export type ConfigProblem =
+export type ConfigProblem = (
   /** the deployment has no escrow or bridge yet */
   | { code: 'NotLive' }
   /** the escrow accepts a different cw721 than the deployment's */
   | { code: 'EscrowCollection'; expected: HubAddress; actual: HubAddress }
-  /** bridge.ESCROW() isn't the deployment's escrow */
+  /** bridge.ESCROW() isn't the deployment's escrow (or isn't 32 bytes, or the configured escrow isn't) */
   | { code: 'BridgeEscrow'; expected: Hex; actual: Hex }
+) & {
+  /** Plain-English explanation, always set by useConfigSanity. describeConfigProblem() builds it. */
+  message?: string
+}
+
+/**
+ * Where the sanity check landed. Only `ok` allows sending.
+ * - `mismatch`: a contract disagrees with the deployment (see problems).
+ * - `not-live`: the deployment has no escrow or bridge yet.
+ * - `unknown`: a read failed, so nothing is proven either way. QueryState.error says why; it re-checks every 30s.
+ */
+export type SanityStatus = 'ok' | 'mismatch' | 'not-live' | 'unknown'
 
 /** Result of the startup sanity check. */
 export interface ConfigSanity {
-  /** Sending is allowed. Treat "still loading" and "check failed to run" as not ok. */
+  /** Sending is allowed. Only true once both checks passed. Treat "still loading" (no data) as not ok too. */
   ok: boolean
-  /** What's wrong, for the visible error. */
+  /** What's wrong, for the visible error. Empty when ok or unknown. */
   problems: ConfigProblem[]
+  /** Why ok is what it is. Always set by useConfigSanity. */
+  status?: SanityStatus
 }
 
 /** A read hook's result. Deliberately smaller than react-query's, so the implementation can change. */

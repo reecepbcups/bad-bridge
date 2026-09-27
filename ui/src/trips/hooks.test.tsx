@@ -1,10 +1,18 @@
-import { renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { useDemoControls } from '../chain/demo/controls'
 import { DEMO_ETH, DEMO_HUB } from '../chain/demo/seed'
 import { demoWrapper } from '../test/demo'
-import { useConfigSanity, useHealth, useOwnedKids, useTrips } from './hooks'
+import { useClaimKids, useConfigSanity, useHealth, useOwnedKids, useSendKids, useTrips } from './hooks'
+import { resetTripStorage } from './storage'
 
 // The pattern for hook tests: renderHook over demoWrapper(), then waitFor the query to settle.
+// hooks.fake.test.tsx covers failures and edge cases over a hand-rolled chain.
+
+beforeEach(() => {
+  localStorage.clear()
+  resetTripStorage()
+})
 
 describe('trip hooks over the demo adapter', () => {
   it('finds the mockup trips by Ethereum address, ready first', async () => {
@@ -29,7 +37,29 @@ describe('trip hooks over the demo adapter', () => {
     const { result } = renderHook(() => ({ health: useHealth(), sanity: useConfigSanity() }), { wrapper: demoWrapper() })
     await waitFor(() => expect(result.current.sanity.data).toBeDefined())
     await waitFor(() => expect(result.current.health.data).toBeDefined())
-    expect(result.current.sanity.data).toEqual({ ok: true, problems: [] })
+    expect(result.current.sanity.data).toEqual({ ok: true, status: 'ok', problems: [] })
     expect(result.current.health.data).toMatchObject({ lagBlocks: 100, lagMinutes: 10, frozen: false, stale: false })
+  })
+
+  it('walks a send through every stage to home', async () => {
+    const { result } = renderHook(
+      () => ({ send: useSendKids(), claim: useClaimKids(), trips: useTrips({ ids: [9176] }, { live: true }), controls: useDemoControls() }),
+      { wrapper: demoWrapper() },
+    )
+    const stage = () => result.current.trips.data?.[0]?.stage
+    await waitFor(() => expect(stage()).toBe('home-hub'))
+
+    await act(() => result.current.send.run([9176], DEMO_ETH))
+    await waitFor(() => expect(stage()).toBe('catching-up'))
+    expect(result.current.trips.data?.[0]).toMatchObject({ recipient: DEMO_ETH, sender: DEMO_HUB })
+
+    act(() => void result.current.controls?.skip()) // relay: the client passes Hs
+    await waitFor(() => expect(stage()).toBe('proving'))
+
+    act(() => void result.current.controls?.skip()) // the proof lands
+    await waitFor(() => expect(stage()).toBe('ready'))
+
+    await act(() => result.current.claim.run([9176]))
+    await waitFor(() => expect(result.current.trips.data?.[0]).toMatchObject({ stage: 'home-eth', owner: DEMO_ETH }))
   })
 })
