@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { DEMO, DEMO_OFF, trackErrors } from './support'
+import { DEMO, DEMO_OFF, pickAndReview, sendButton, skipAhead, trackErrors } from './support'
 
 // The chrome around the views: the demo banner, the skip link, tabs, titles, focus after actions that remove
 // the focused control, live announcements and thumb-sized targets.
@@ -75,6 +75,20 @@ test('connecting from the header lands focus on the new chip', async ({ page }) 
   await page.getByRole('button', { name: 'Connect Hub' }).click()
   await page.getByRole('dialog', { name: 'Connect Cosmos Hub' }).getByRole('button', { name: 'Connect Keplr' }).click()
   await expect(page.getByRole('button', { name: /^Cosmos Hub cosmos1q8m…3fxl$/ })).toBeFocused()
+})
+
+test('connecting Ethereum on the claim screen hands focus to the Claim button', async ({ page }) => {
+  await page.goto(`${DEMO}#/`)
+  await pickAndReview(page, [663])
+  await page.getByLabel('Got it, one way only').check()
+  await sendButton(page).click()
+  await skipAhead(page)
+  await skipAhead(page)
+  await expect(page.getByRole('heading', { level: 2, name: 'It made it across!' })).toBeVisible()
+  await page.evaluate(() => window.badBridgeDemo?.setWallet('eth', false))
+  await page.getByRole('button', { name: 'Connect Ethereum to claim' }).click()
+  await page.getByRole('dialog', { name: 'Connect Ethereum' }).getByRole('button', { name: 'Connect MetaMask' }).click()
+  await expect(page.getByRole('button', { name: 'Claim 1 kid' })).toBeFocused()
 })
 
 test('a tracker claim is announced while it runs, then focus lands on the kid', async ({ page }) => {

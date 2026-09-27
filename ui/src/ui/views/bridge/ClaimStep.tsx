@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useBridge } from '../../../chain/context'
 import { useClaimEstimate, useClaimKids } from '../../../trips/hooks'
 import type { Trip } from '../../../trips/types'
@@ -31,6 +32,7 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
   const { update } = useFlow()
   const toast = useToast()
   const claim = useClaimKids()
+  const claimRow = useRef<HTMLDivElement>(null)
   useTitle('Ready to claim')
   // in the order they were sent, like the pictures and the headings
   const stageOf = new Map(trips.map((t) => [t.tokenId, t.stage]))
@@ -63,7 +65,7 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
       <p className="lede center">
         The proof landed on Ethereum. Claim to mint{' '}
         {n === 1 ? (sent.ids.length === 1 ? 'your kid' : kidList(ready)) : n === 2 ? 'both kids' : `all ${n} kids`} to{' '}
-        <span className="mono">{shortAddress(sent.recipient)}</span>.
+        <span className="mono nowrap">{shortAddress(sent.recipient)}</span>.
       </p>
       {already.length > 0 && (
         <p className="hint center">
@@ -71,9 +73,9 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
           you.
         </p>
       )}
-      <div className="row center">
+      <div className="row center" ref={claimRow}>
         {ethWallet.status !== 'connected' || !ethWriter ? (
-          <ConnectButton chain="eth" className="btn eth">
+          <ConnectButton chain="eth" className="btn eth" focusAfter={() => claimRow.current?.querySelector('button')}>
             Connect Ethereum to claim
           </ConnectButton>
         ) : ethWallet.wrongChain ? (
@@ -109,7 +111,7 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
       )}
       <p className="hint center">
         One Ethereum transaction claims {n === 1 ? 'it' : n === 2 ? 'both' : 'them all'}. Anyone can claim; it always goes to{' '}
-        <span className="mono">{shortAddress(sent.recipient)}</span>.
+        <span className="mono nowrap">{shortAddress(sent.recipient)}</span>.
         {/* COPY: claim hint */}
       </p>
     </>
@@ -155,7 +157,9 @@ export function DoneStep({ sent, claimTx }: { sent: SentTrip; claimTx: string | 
           {opensea.map((o, i) => (
             <span key={o.id}>
               {i > 0 && ' · '}
-              <ExtLink href={o.url}>#{o.id}</ExtLink>
+              <ExtLink className="nowrap" href={o.url}>
+                #{o.id}
+              </ExtLink>
             </span>
           ))}
         </p>

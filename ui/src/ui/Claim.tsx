@@ -74,9 +74,11 @@ export function claimingHint(stage: ClaimStage, walletName: string | undefined):
 /** A Claim button for some ready kids. Without an Ethereum wallet it opens the connect sheet instead. */
 export function ClaimButton({ ids, flow, children }: { ids: readonly KidId[]; flow: ClaimFlow; children: string }) {
   const { ethWallet, ethWriter } = useBridge()
+  // finds this button again after a connect, even if the list around it re-rendered from scratch
+  const key = ids.join(' ')
   if (!ethWriter) {
     return (
-      <ConnectButton chain="eth" className="btn eth">
+      <ConnectButton chain="eth" className="btn eth" focusAfter={() => document.querySelector<HTMLElement>(`[data-claim="${key}"]`)}>
         {children}
       </ConnectButton>
     )
@@ -87,6 +89,7 @@ export function ClaimButton({ ids, flow, children }: { ids: readonly KidId[]; fl
     <button
       type="button"
       className="btn eth"
+      data-claim={key}
       disabled={ethWallet.wrongChain === true}
       aria-disabled={flow.pending || undefined}
       onClick={() => {

@@ -78,6 +78,8 @@ test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, don
   await page.getByRole('dialog', { name: 'Connect Ethereum' }).getByRole('button', { name: 'Connect MetaMask' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByLabel('Ethereum address')).toHaveValue(DEMO_ETH)
+  // the connect button is gone: focus lands on the address it filled in
+  await expect(page.getByLabel('Ethereum address')).toBeFocused()
   await expect(page.getByText('Filled in from MetaMask.')).toBeVisible()
   await expect(page.getByText('Tick “Got it, one way only” to send.')).toBeVisible()
 

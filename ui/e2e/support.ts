@@ -30,6 +30,7 @@ interface DemoSimHandle {
   setOffline(on: boolean): void
   setFailNext(code: string | null): void
   setWrongChain(on: boolean): void
+  setWallet(chain: 'hub' | 'eth', connected: boolean): void
   commitSend(sender: string, ids: readonly number[], recipient: string): unknown
 }
 

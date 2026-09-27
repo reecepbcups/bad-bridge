@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useBridge } from '../chain/context'
 import type { WalletState } from '../chain/types'
 import { ErrorNote } from './ErrorNote'
@@ -121,26 +121,68 @@ function OnYourPhone({ chain }: { chain: Chain }) {
   )
 }
 
-/** A button that opens the connect sheet for one chain. */
+/** A button that opens the connect sheet for one chain. See `focusAfter` for where focus goes once connected. */
 export function ConnectButton({
   chain,
   className = 'btn',
   children,
+  focusAfter,
 }: {
   chain: Chain
   className?: string
   children?: ReactNode
+  /**
+   * The screen usually swaps this button for what it was waiting for (a Claim button, a filled-in address), which
+   * drops focus to <body>. Once it's gone, focus goes to what this returns, or to the view's heading.
+   */
+  focusAfter?: () => HTMLElement | null | undefined
 }) {
   const [open, setOpen] = useState(false)
   const wallet = useWallet(chain)
+  const button = useRef<HTMLButtonElement>(null)
   return (
     <>
-      <button type="button" className={className} disabled={wallet.status === 'connecting'} onClick={() => setOpen(true)}>
+      <button
+        ref={button}
+        type="button"
+        className={className}
+        disabled={wallet.status === 'connecting'}
+        onClick={() => setOpen(true)}
+      >
         {wallet.status === 'connecting' ? 'Connecting…' : (children ?? `Connect ${CHAIN_NAME[chain]}`)}
       </button>
-      <ConnectSheet chain={chain} open={open} onClose={() => setOpen(false)} />
+      <ConnectSheet chain={chain} open={open} onClose={() => setOpen(false)} onConnected={() => refocus(button.current, focusAfter)} />
     </>
   )
+}
+
+/** Frames to wait for the swap and for `focusAfter`'s element (a list can reload first) before settling for the heading. */
+const REFOCUS_FRAMES = 180
+
+/**
+ * After a connect: once `opener` has left the page and focus fell to <body>, focus `find()`'s element, or the view
+ * heading if it doesn't turn up. Focus that landed anywhere else is left alone.
+ */
+export function refocus(opener: HTMLElement | null, find?: () => HTMLElement | null | undefined): void {
+  let frames = 0
+  const tick = () => {
+    frames++
+    const active = document.activeElement
+    const lost = !active || active === document.body
+    if (opener?.isConnected || !lost) {
+      // still waiting for the swap, or someone else placed focus
+      if (opener?.isConnected && frames < REFOCUS_FRAMES) requestAnimationFrame(tick)
+      return
+    }
+    const target = find?.()
+    if (target) return target.focus()
+    if (frames < REFOCUS_FRAMES) return void requestAnimationFrame(tick)
+    const heading = document.querySelector<HTMLElement>('#main h2')
+    if (!heading) return
+    if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1')
+    heading.focus()
+  }
+  requestAnimationFrame(tick)
 }
 
 /** The connect sheet: pick a wallet for `chain`. Closes itself once connected, after calling `onConnected`. */

@@ -205,7 +205,7 @@ export function ReviewStep() {
       <RecipientHint id={hintId} check={check} auto={auto} connected={connectedEth} walletName={ethWallet.walletName} />
       {!connectedEth && (
         <div className="row start">
-          <ConnectButton chain="eth" className="btn ghost small">
+          <ConnectButton chain="eth" className="btn ghost small" focusAfter={() => document.getElementById(inputId)}>
             Connect Ethereum to fill it in
           </ConnectButton>
         </div>

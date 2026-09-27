@@ -200,7 +200,7 @@ export function AboutView() {
 function Admin({ address }: { address: HubAddress }) {
   const { deployment } = useBridge()
   return (
-    <ExtLink className="mono" href={deployment.explorer.hubAccount(address)} arrow={false}>
+    <ExtLink className="mono nowrap" href={deployment.explorer.hubAccount(address)} arrow={false}>
       {shortAddress(address)}
     </ExtLink>
   )

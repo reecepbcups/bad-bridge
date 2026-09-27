@@ -38,6 +38,8 @@ test('look up an address, then claim everything that is ready in one tx', async 
   // no Ethereum wallet yet: the sheet asks for one first
   await page.getByRole('dialog', { name: 'Connect Ethereum' }).getByRole('button', { name: 'Connect MetaMask' }).click()
   await expect(page.getByRole('heading', { level: 2, name: 'My kids' })).toBeVisible()
+  // the connect button became the real Claim button: focus follows it instead of dropping to <body>
+  await expect(page.getByRole('button', { name: 'Claim both' })).toBeFocused()
   await page.getByRole('button', { name: 'Claim both' }).click()
   await expect(page.getByText('3 home', { exact: true })).toBeVisible()
   await expect(page.getByRole('status').getByText('Claimed #8783 & #9254')).toBeVisible()
