@@ -29,6 +29,9 @@ export default function DemoBridgeProvider({
   children: ReactNode
 }) {
   const [sim] = useState(() => new DemoSim(options ?? demoOptionsFromSearch(location.search)))
+  const [notLive] = useState(() => (options ?? demoOptionsFromSearch(location.search)).notLive === true)
+  // ?demo=notlive: the same sim behind a deployment with no escrow or bridge yet
+  const active = useMemo(() => (notLive ? withoutContracts(deployment) : deployment), [notLive, deployment])
   const snapshot = useSyncExternalStore(sim.subscribe, sim.getSnapshot)
   const queryClient = useQueryClient()
 
@@ -47,9 +50,12 @@ export default function DemoBridgeProvider({
     }
   }, [sim])
 
-  const readers = useMemo(() => createDemoReaders(sim, deployment), [sim, deployment])
+  const readers = useMemo(() => createDemoReaders(sim, active), [sim, active])
   const hubWallet = useMemo(() => createDemoWallet<HubAddress>(sim, 'hub', snapshot.hubWallet), [sim, snapshot.hubWallet])
-  const ethWallet = useMemo(() => createDemoWallet<EthAddress>(sim, 'eth', snapshot.ethWallet), [sim, snapshot.ethWallet])
+  const ethWallet = useMemo(
+    () => createDemoWallet<EthAddress>(sim, 'eth', snapshot.ethWallet, snapshot.ethWrongChain),
+    [sim, snapshot.ethWallet, snapshot.ethWrongChain],
+  )
   const hubWriter = useMemo(
     () => (hubWallet.status === 'connected' && hubWallet.address ? createDemoHubWriter(sim, hubWallet.address) : null),
     [sim, hubWallet],
@@ -60,8 +66,8 @@ export default function DemoBridgeProvider({
   )
 
   const value = useMemo<BridgeContextValue>(
-    () => ({ deployment, ...readers, hubWallet, ethWallet, hubWriter, ethWriter }),
-    [deployment, readers, hubWallet, ethWallet, hubWriter, ethWriter],
+    () => ({ deployment: active, ...readers, hubWallet, ethWallet, hubWriter, ethWriter }),
+    [active, readers, hubWallet, ethWallet, hubWriter, ethWriter],
   )
 
   const controls = useMemo<DemoControls>(
@@ -75,6 +81,7 @@ export default function DemoBridgeProvider({
       setOffline: (on) => sim.setOffline(on),
       setFailNext: (code) => sim.setFailNext(code),
       setWallet: (chain, connected) => sim.setWallet(chain, connected),
+      setWrongChain: (on) => sim.setWrongChain(on),
       reset: () => sim.reset(),
     }),
     [sim, snapshot],
@@ -85,4 +92,14 @@ export default function DemoBridgeProvider({
       <DemoControlsContext.Provider value={controls}>{children}</DemoControlsContext.Provider>
     </BridgeContext.Provider>
   )
+}
+
+/** The deployment as it looks before launch: no escrow, no bridge, no bridge links. */
+function withoutContracts(d: Deployment): Deployment {
+  return {
+    ...d,
+    hub: { ...d.hub, escrow: null },
+    eth: { ...d.eth, bridge: null },
+    explorer: { ...d.explorer, ethToken: () => null, opensea: () => null },
+  }
 }

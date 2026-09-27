@@ -1,6 +1,10 @@
+import { useState } from 'react'
 import { useBridge } from '../../chain/context'
 import type { WalletState } from '../../chain/types'
+import { CHAIN_NAME, ConnectSheet, type Chain } from '../Connect'
 import { shortAddress } from '../format'
+import { useCopy } from '../hooks'
+import { Sheet } from '../Sheet'
 import './Header.css'
 
 export function Header() {
@@ -16,37 +20,71 @@ export function Header() {
         </svg>
       </div>
       <div className="wallets">
-        <WalletChip chain="Cosmos Hub" color="var(--hub)" wallet={hubWallet} />
-        <WalletChip chain="Ethereum" color="var(--eth)" wallet={ethWallet} />
+        <WalletChip chain="hub" color="var(--hub)" wallet={hubWallet} />
+        <WalletChip chain="eth" color="var(--eth)" wallet={ethWallet} />
       </div>
     </header>
   )
 }
 
-/**
- * Connected: the short address, like the mockup. Otherwise a button that connects the first installed
- * wallet. Phase 0 placeholder; the UI workstream replaces the click with a connect sheet.
- */
-function WalletChip({ chain, color, wallet }: { chain: string; color: string; wallet: WalletState }) {
+/** Connected: the short address, like the mockup; click for the full address and disconnect. Otherwise a connect button. */
+function WalletChip({ chain, color, wallet }: { chain: Chain; color: string; wallet: WalletState }) {
+  const [open, setOpen] = useState(false)
+  const name = CHAIN_NAME[chain]
   if (wallet.status === 'connected' && wallet.address) {
     return (
-      <span className="chip" title={`${chain}: ${wallet.address}${wallet.walletName ? ` (${wallet.walletName})` : ''}`}>
-        <span className="dot" style={{ background: color }} />
-        <span className="sr-only">{chain} </span>
-        {shortAddress(wallet.address)}
-      </span>
+      <>
+        <button
+          type="button"
+          className="chip"
+          title={`${name}: ${wallet.address}${wallet.walletName ? ` (${wallet.walletName})` : ''}`}
+          onClick={() => setOpen(true)}
+        >
+          <span className="dot" style={{ background: color }} />
+          <span className="sr-only">{name} wallet </span>
+          {shortAddress(wallet.address)}
+        </button>
+        <Sheet open={open} onClose={() => setOpen(false)} title={`Your ${name} wallet`}>
+          <WalletMe wallet={wallet} onDone={() => setOpen(false)} />
+        </Sheet>
+      </>
     )
   }
-  const option = wallet.options.find((o) => o.installed)
   return (
-    <button
-      type="button"
-      className="chip off"
-      disabled={wallet.status === 'connecting' || !option}
-      onClick={() => option && wallet.connect(option.id).catch(() => undefined)}
-    >
-      <span className="dot" style={{ color }} />
-      {wallet.status === 'connecting' ? 'connecting…' : `connect ${chain}`}
-    </button>
+    <>
+      <button type="button" className="chip off" disabled={wallet.status === 'connecting'} onClick={() => setOpen(true)}>
+        <span className="dot" style={{ color }} />
+        {wallet.status === 'connecting' ? 'connecting…' : `connect ${name}`}
+      </button>
+      <ConnectSheet chain={chain} open={open} onClose={() => setOpen(false)} />
+    </>
+  )
+}
+
+function WalletMe({ wallet, onDone }: { wallet: WalletState; onDone: () => void }) {
+  const { copy, copied } = useCopy()
+  const address = wallet.address ?? ''
+  return (
+    <>
+      <div className="wallet-me">
+        <span className="muted">Connected{wallet.walletName ? ` with ${wallet.walletName}` : ''}</span>
+        <span className="mono">{address}</span>
+      </div>
+      <div className="row">
+        <button type="button" className="btn ghost" onClick={() => void copy(address)}>
+          {copied ? 'Copied!' : 'Copy address'}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => {
+            void wallet.disconnect()
+            onDone()
+          }}
+        >
+          Disconnect
+        </button>
+      </div>
+    </>
   )
 }

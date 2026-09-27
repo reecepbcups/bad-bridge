@@ -1,0 +1,21 @@
+/* bottom-of-screen notices for tx results */
+.toasts {
+  position: fixed; inset-inline: 0; bottom: 16px; z-index: 20;
+  display: grid; justify-items: center; gap: 8px; padding-inline: 16px; pointer-events: none;
+}
+.toast {
+  pointer-events: auto; width: min(100%, 420px);
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--paper); color: var(--ink);
+  border: 2.5px solid var(--ink); border-radius: var(--wobble-2); box-shadow: 3px 4px 0 var(--ink);
+  padding: 10px 12px 10px 14px; font-size: 14px;
+}
+.toast > div { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.toast b { font: 700 20px/1.1 var(--display); }
+.toast.ok b { color: var(--ok-ink); }
+.toast.bad b { color: var(--crayon-ink); }
+.toast a { overflow-wrap: anywhere; }
+.toast .x {
+  flex: none; font: 700 22px/1 var(--display); color: var(--ink-soft); background: none; border: 0;
+  cursor: pointer; padding: 2px 6px; min-width: 32px; min-height: 32px;
+}

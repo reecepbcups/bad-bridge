@@ -36,3 +36,20 @@
   .bob { animation: none; }
   .kid { transition: none; }
 }
+
+/* pick: loading tiles, "show more", the crossing nudge, the inline wallet list */
+.kid.skeleton { cursor: default; display: block; }
+.kid.skeleton .art { width: 96px; height: 96px; margin: 0 auto; border-color: var(--line); }
+.more-row { justify-content: flex-start; }
+.nudge { margin: 0; }
+.nudge a { font-weight: 800; }
+.connect-inline { display: grid; gap: 12px; }
+.connect-inline .muted { margin: 0; }
+
+/* review */
+.picked .mini .art.doodle { padding: 2px; }
+
+/* crossing scene labels */
+.scene text.hub { fill: var(--hub-ink); }
+.scene text.eth { fill: var(--eth-ink); }
+.scene text.more { font-size: 22px; }

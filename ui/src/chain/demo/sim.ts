@@ -57,6 +57,12 @@ export interface DemoOptions {
   paused?: boolean
   /** Start with both wallets disconnected. */
   disconnected?: boolean
+  /** Also give the demo Hub wallet this many extra kids (#1000 up, no pictures), for big-wallet review. */
+  extraKids?: number
+  /** Pretend the deployment has no escrow or bridge yet (the provider swaps the deployment). */
+  notLive?: boolean
+  /** Start with the Ethereum wallet on another network. */
+  wrongChain?: boolean
 }
 
 export type DemoChain = 'hub' | 'eth'
@@ -88,6 +94,8 @@ export interface DemoSnapshot {
   pending: number
   hubWallet: DemoWallet
   ethWallet: DemoWallet
+  /** The Ethereum wallet is on another network: claims fail with WrongChain until switchChain(). */
+  ethWrongChain: boolean
 }
 
 type EventKind = 'relay' | 'prove' | 'background'
@@ -132,6 +140,7 @@ export class DemoSim {
   private hubWallet: DemoWallet = { status: 'disconnected' }
   private ethWallet: DemoWallet = { status: 'disconnected' }
   private txCount = 0
+  private ethWrongChain = false
 
   private version = 0
   private snapshot!: DemoSnapshot
@@ -230,6 +239,19 @@ export class DemoSim {
     this.setWalletState(chain, connected ? this.connected(chain, chain === 'hub' ? 'Keplr' : 'MetaMask') : { status: 'disconnected' })
   }
 
+  /** Put the Ethereum wallet on another network (or back). */
+  setWrongChain(on: boolean): void {
+    this.ethWrongChain = on
+    this.emit()
+  }
+
+  /** The wallet's "switch network" prompt, accepted. */
+  switchChain(): void {
+    this.takeFailure('connect')
+    this.ethWrongChain = false
+    this.emit()
+  }
+
   reset(): void {
     this.seed()
   }
@@ -317,6 +339,7 @@ export class DemoSim {
   /** Mints every proven, unminted kid in `ids`, like Multicall3 aggregate3 with allowFailure. */
   claim(ids: readonly KidId[]): ClaimResult {
     this.takeFailure('claim')
+    if (this.ethWrongChain) throw new BridgeError('WrongChain', 'demo: the Ethereum wallet is on another network')
     const mintable = ids.filter((id) => this.proven.has(id) && !this.ethOwners.has(id))
     if (mintable.length === 0) {
       const id = ids.find((i) => !this.proven.has(i))
@@ -353,6 +376,8 @@ export class DemoSim {
     this.failNext = null
     this.unblockedAt = seed.EPOCH
     this.hubOwners = new Map(seed.OWNED.map((id) => [id, seed.DEMO_HUB]))
+    for (let i = 0; i < (this.options.extraKids ?? 0); i++) this.hubOwners.set(1000 + i, seed.DEMO_HUB)
+    this.ethWrongChain = this.options.wrongChain ?? false
     this.records = new Map()
     this.sends = new Map()
     this.proven = new Map()
@@ -464,6 +489,7 @@ export class DemoSim {
       pending: this.events.filter((e) => e.kind !== 'background').length,
       hubWallet: this.hubWallet,
       ethWallet: this.ethWallet,
+      ethWrongChain: this.ethWrongChain,
     }
     for (const listener of this.listeners) listener()
   }

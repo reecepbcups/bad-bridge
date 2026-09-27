@@ -1,43 +1,56 @@
 import { useBridge } from '../../chain/context'
+import { useHealth } from '../../trips/hooks'
 import { Card } from '../chrome/Card'
+import { aboutMinutes, blockNumber } from '../format'
+import { useChangedAt, useWallClock } from '../hooks'
 import { KidArt } from '../KidArt'
 import './about.css'
 
-// Ported from the mockup's About view. Addresses come from the active deployment.
+// Ported from the mockup's About view, with the facts fixed: one signature sends any number of kids, one
+// Ethereum tx claims any number, and waiting times are live instead of "20–60 minutes".
+// Addresses come from the active deployment.
 
 export function AboutView() {
   const { deployment } = useBridge()
+  const health = useHealth()
   const { hub, eth, explorer } = deployment
   const source = deployment.sourceUrl.replace(/^https:\/\//, '')
+  const lag = health.data && !health.data.stale ? aboutMinutes(health.data.lagMinutes) : null
   return (
     <Card>
       <div className="about">
-        <h2>What's the Bad Bridge?</h2>
+        <h2 tabIndex={-1}>What's the Bad Bridge?</h2>
         <p className="lede">
           A one-way bridge that moves Bad Kids from the Cosmos Hub to Ethereum. Same kid, same number, same art, new home.
         </p>
         <div className="celebrate">
           {[4801, 663, 3838].map((id) => (
-            <KidArt key={id} id={id} size={110} />
+            <KidArt key={id} id={id} size={110} eager />
           ))}
         </div>
+
+        <HealthStrip />
 
         <h3>How it works</h3>
         <ol className="how">
           <li>
             <span className="n">1</span>
             <span className="where hub">Cosmos Hub</span>
-            <b>You send your kid</b>It goes into an escrow on the Hub, along with the Ethereum address it should land at.
+            <b>You send your kids</b>They go into an escrow on the Hub, along with the Ethereum address they should land at.
+            One signature sends as many as you like.
+            {/* COPY: how-it-works step 1 */}
           </li>
           <li>
             <span className="n">2</span>
             <span className="where mid">In between</span>
-            <b>We prove it left</b>A zero-knowledge proof shows Ethereum that the kid really is locked on the Hub.
+            <b>We prove they left</b>A zero-knowledge proof shows Ethereum that the kids really are locked on the Hub.
           </li>
           <li>
             <span className="n">3</span>
             <span className="where eth">Ethereum</span>
-            <b>You claim it</b>The same kid, with the same number, gets minted to your Ethereum address.
+            <b>You claim them</b>The same kids, with the same numbers, get minted to your Ethereum address. One transaction
+            claims them all.
+            {/* COPY: how-it-works step 3 */}
           </li>
         </ol>
 
@@ -75,8 +88,10 @@ export function AboutView() {
           <details>
             <summary>Why does it take a while?</summary>
             <p>
-              Ethereum only learns about new Hub blocks when IBC Eureka relays a transfer. After that, the prover
-              bundles waiting kids into one proof. Usually that's 20 to 60 minutes.
+              Ethereum only learns about new Hub blocks when IBC Eureka relays a transfer. After that, the prover bundles
+              waiting kids into one proof. So the wait depends on how far behind Ethereum is
+              {lag ? <>: right now that's {lag}.</> : '.'}
+              {/* COPY: FAQ wait time */}
             </p>
           </details>
           <details>
@@ -89,12 +104,33 @@ export function AboutView() {
           </details>
           <details>
             <summary>What does it cost?</summary>
-            <p>A normal Hub transaction to send, then about 79,000 gas on Ethereum to claim. The prover pays for the proof.</p>
+            <p>
+              One Hub transaction sends any number of kids, for a small ATOM fee. Then one Ethereum transaction claims
+              them all, at roughly 79,000 gas per kid. The prover pays for the proof.
+              {/* COPY: FAQ cost */}
+            </p>
+          </details>
+          <details>
+            <summary>Who can claim my kid?</summary>
+            <p>
+              Anyone. A claim always mints the kid to the address it was sent to, so it's safe for a friend (or a bot) to
+              claim for you.
+              {/* COPY: FAQ who can claim */}
+            </p>
+          </details>
+          <details>
+            <summary>Ethereum and Hub kids: are they the same?</summary>
+            <p>
+              Same number, same art, but they trade separately. An Ethereum kid trades on Ethereum marketplaces, not on
+              Stargaze or other Hub marketplaces.
+              {/* COPY: needs sign-off (trading disclosure) */}
+            </p>
           </details>
           <details>
             <summary>I closed the tab. Where's my kid?</summary>
             <p>
-              Open <a href="#/kids">My kids</a> and look up your Ethereum address. It works from any device.
+              Open <a href="#/kids">My kids</a> and look up your Ethereum address, your Hub address or the kid's number.
+              It works from any device.
             </p>
           </details>
         </div>
@@ -108,20 +144,26 @@ export function AboutView() {
                 {hub.escrow}
               </a>
             ) : (
-              'not live yet'
+              <span className="muted">not live yet</span>
             )}
+          </dd>
+          <dt>{deployment.collectionName} (Cosmos Hub)</dt>
+          <dd>
+            <a className="mono" href={explorer.hubContract(hub.cw721)} target="_blank" rel="noopener">
+              {hub.cw721}
+            </a>
           </dd>
           <dt>BadBridge (Ethereum)</dt>
           <dd>
             {eth.bridge ? (
               <a className="mono" href={explorer.ethAddress(eth.bridge)} target="_blank" rel="noopener">
-                {eth.bridge.toLowerCase()}
+                {eth.bridge}
               </a>
             ) : (
-              'not live yet'
+              <span className="muted">not live yet</span>
             )}
           </dd>
-          <dt>Hub light client</dt>
+          <dt>Hub light client (Ethereum)</dt>
           <dd>
             <a className="mono" href={explorer.ethAddress(eth.lightClient)} target="_blank" rel="noopener">
               {eth.lightClient}
@@ -134,10 +176,49 @@ export function AboutView() {
             </a>
           </dd>
         </dl>
-        {deployment.id !== 'badkids' && (
-          <p className="note">These are the test deployment (ReeceBadTest). The real Bad Kids addresses go here at launch.</p>
-        )}
+        {deployment.demo ? (
+          <p className="note">
+            This is the demo: nothing here touches a real chain. The addresses are the test deployment (ReeceBadTest).
+          </p>
+        ) : deployment.id !== 'badkids' ? (
+          <p className="note">These are the test deployment ({deployment.collectionName}). The real Bad Kids addresses go here at launch.</p>
+        ) : null}
       </div>
     </Card>
+  )
+}
+
+/** Live health: how far behind Ethereum is, whether the bridge is paused, and when we last checked. */
+function HealthStrip() {
+  const health = useHealth()
+  const checkedAt = useChangedAt(health.data)
+  const now = useWallClock()
+  const h = health.data
+  if (!h) {
+    return (
+      <p className="health muted" role="status">
+        {health.error ? "Can't reach the chains right now to check on the bridge." : 'Checking on the bridge…'}
+      </p>
+    )
+  }
+  const ago = checkedAt === null ? 'just now' : Math.max(0, now - checkedAt) < 60_000 ? 'just now' : `${Math.round((now - checkedAt) / 60_000)} min ago`
+  return (
+    <div className="health" aria-label="Bridge health">
+      <span className={h.frozen ? 'dot bad' : 'dot ok'} aria-hidden="true" />
+      <span>
+        <b>{h.frozen ? 'Paused' : 'Running'}</b>
+        {h.frozen ? ': the light client is frozen, so no new proofs.' : '.'}
+      </span>
+      <span>
+        {health.error
+          ? "Couldn't check just now, so these numbers may be old."
+          : h.stale
+            ? 'Ethereum is a long way behind the Hub right now.'
+            : `Ethereum is ${aboutMinutes(h.lagMinutes)} behind the Hub`}
+        <span className="muted mono"> ({blockNumber(h.lagBlocks)} blocks)</span>
+        {/* COPY: health strip */}
+      </span>
+      {!health.error && <span className="muted">checked {ago}</span>}
+    </div>
   )
 }

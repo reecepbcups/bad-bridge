@@ -96,9 +96,29 @@ export function createDemoEthWriter(sim: DemoSim, address: EthAddress): EthWrite
 }
 
 /** WalletState over one of the sim's wallets. `wallet` is the snapshot's (immutable) view of it. */
-export function createDemoWallet<A extends string>(sim: DemoSim, chain: DemoChain, wallet: DemoWallet): WalletState<A> {
+export function createDemoWallet<A extends string>(
+  sim: DemoSim,
+  chain: DemoChain,
+  wallet: DemoWallet,
+  wrongChain = false,
+): WalletState<A> {
   const options = chain === 'hub' ? HUB_OPTIONS : ETH_OPTIONS
+  const ethOnly: Pick<WalletState<A>, 'wrongChain' | 'switchChain'> =
+    chain === 'eth'
+      ? {
+          wrongChain: wallet.status === 'connected' && wrongChain,
+          switchChain: async () => {
+            await delay(sim.timeline.walletMs)
+            try {
+              sim.switchChain()
+            } catch (e) {
+              throw toBridgeError(e)
+            }
+          },
+        }
+      : {}
   return {
+    ...ethOnly,
     status: wallet.status,
     address: wallet.address as A | undefined,
     walletName: wallet.walletName,

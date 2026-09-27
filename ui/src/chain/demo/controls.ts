@@ -22,6 +22,8 @@ export interface DemoControls {
   setFailNext(code: BridgeErrorCode | null): void
   /** Connect or disconnect a wallet instantly, skipping the prompt. */
   setWallet(chain: DemoChain, connected: boolean): void
+  /** Put the Ethereum wallet on another network: wrongChain shows, claims fail with WrongChain. */
+  setWrongChain(on: boolean): void
   /** Back to the seeded state. */
   reset(): void
 }

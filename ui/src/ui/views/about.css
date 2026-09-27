@@ -26,3 +26,13 @@
   .addrs { grid-template-columns: 1fr; gap: 2px; }
   .addrs dd { margin-bottom: 8px; }
 }
+
+/* live health strip */
+.health {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0;
+  border: 2px dashed var(--line); border-radius: var(--wobble-2); padding: 10px 14px; font-size: 14px;
+}
+.health b { font-weight: 800; }
+.health .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); }
+.health .dot.ok { background: var(--ok); }
+.health .dot.bad { background: var(--crayon); }

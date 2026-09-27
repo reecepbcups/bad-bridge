@@ -15,6 +15,7 @@ const FAILURES: readonly BridgeErrorCode[] = [
   'UserRejected',
   'InsufficientFunds',
   'AlreadyBridged',
+  'NotOwner',
   'ZeroRecipient',
   'BadRecipient',
   'WrongCollection',
@@ -90,6 +91,9 @@ export function DevBar({ route }: { route: Route }) {
             onClick={() => demo.setWallet('eth', s.ethWallet.status !== 'connected')}
           >
             eth wallet
+          </button>
+          <button type="button" aria-pressed={s.ethWrongChain} onClick={() => demo.setWrongChain(!s.ethWrongChain)}>
+            wrong chain
           </button>
           <button type="button" onClick={() => demo.reset()}>
             reset
