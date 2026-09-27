@@ -1,9 +1,19 @@
-import { zeroAddress, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
-import { getCode, multicall, readContract } from 'viem/actions'
+import { encodeFunctionData, getAddress, zeroAddress, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
+import { estimateContractGas, getCode, getGasPrice, getStorageAt, multicall, readContract } from 'viem/actions'
 import type { Deployment } from '../../config/deployments'
-import { BridgeError, type ClientStatus, type EthAddress, type EthReader, type KidEthStatus, type KidId } from '../types'
-import { bridgeAbi, lightClientAbi } from './abi'
+import {
+  BridgeError,
+  type BridgeWiring,
+  type ClaimEstimate,
+  type ClientStatus,
+  type EthAddress,
+  type EthReader,
+  type KidEthStatus,
+  type KidId,
+} from '../types'
+import { bridgeAbi, lightClientAbi, multicall3WriteAbi } from './abi'
 import { createEthPublicClient } from './client'
+import { typicalClaimGas } from './gas'
 import { findRevert, toEthError } from './errors'
 
 /** Kids per multicall. Two calls each: 500 calls, ~110 KB of calldata and ~2M gas, well inside public RPC limits. */
@@ -13,6 +23,8 @@ const CHUNK_CONCURRENCY = 4
 /** EIP-7702 delegation designator: 0xef0100 ++ 20-byte delegate. Code like this is still an EOA. */
 const DELEGATION_PREFIX = '0xef0100'
 const DELEGATION_CODE_LENGTH = 2 + 2 * 23
+/** EIP-1967 implementation slot: bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1). */
+export const EIP1967_IMPLEMENTATION_SLOT: Hex = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
 
 export interface EthReaderOptions {
   /** Client to read through. Defaults to one over the deployment's RPCs (fallback transport). */
@@ -54,6 +66,15 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
   return out
 }
 
+/** Multicall3 aggregate3 calls that claim each kid. */
+export function claimCalls(bridge: Address, ids: readonly KidId[], allowFailure: boolean) {
+  return ids.map((id) => ({
+    target: bridge,
+    allowFailure,
+    callData: encodeFunctionData({ abi: bridgeAbi, functionName: 'claim', args: [id] }),
+  }))
+}
+
 /** True for code that makes an address a contract. Empty code and EIP-7702 delegations are EOAs. */
 export function isContractCode(code: Hex | undefined): boolean {
   if (!code || code === '0x') return false
@@ -93,6 +114,25 @@ export function createEthReader(deployment: Deployment, options: EthReaderOption
     })
   }
 
+  /** Gas to claim exactly these kids, or null if any of them can't be claimed right now (the estimate reverts). */
+  async function simulatedClaimGas(bridge: Address, ids: readonly KidId[]): Promise<bigint | null> {
+    try {
+      // claim ignores msg.sender, so estimating from no account prices the same transaction a wallet would send
+      if (ids.length === 1) {
+        return await estimateContractGas(client, { address: bridge, abi: bridgeAbi, functionName: 'claim', args: [ids[0] as KidId] })
+      }
+      // allowFailure: false, like the writer's estimate: one kid that can't be claimed makes it revert
+      return await estimateContractGas(client, {
+        address: multicallAddress,
+        abi: multicall3WriteAbi,
+        functionName: 'aggregate3',
+        args: [claimCalls(bridge, ids, false)],
+      })
+    } catch {
+      return null
+    }
+  }
+
   return {
     client: () =>
       guard(async (): Promise<ClientStatus> => {
@@ -128,6 +168,38 @@ export function createEthReader(deployment: Deployment, options: EthReaderOption
         const bridge = requireBridge(deployment)
         const escrow = await readContract(client, { address: bridge, abi: bridgeAbi, functionName: 'ESCROW' })
         return escrow.toLowerCase() as Hex
+      }),
+
+    bridgeWiring: () =>
+      guard(async (): Promise<BridgeWiring> => {
+        const bridge = requireBridge(deployment)
+        const [router, clientId, lightClient] = await Promise.all([
+          readContract(client, { address: bridge, abi: bridgeAbi, functionName: 'ROUTER' }),
+          readContract(client, { address: bridge, abi: bridgeAbi, functionName: 'clientId' }),
+          readContract(client, { address: bridge, abi: bridgeAbi, functionName: 'lightClient' }),
+        ])
+        const [chainId] = await readContract(client, { address: lightClient, abi: lightClientAbi, functionName: 'clientState' })
+        return { router, clientId, lightClient, chainId }
+      }),
+
+    proxyImplementation: (address) =>
+      guard(async () => {
+        const slot = await getStorageAt(client, { address, slot: EIP1967_IMPLEMENTATION_SLOT })
+        if (!slot || /^0x0*$/.test(slot)) return null
+        return getAddress(`0x${slot.slice(-40)}`)
+      }),
+
+    estimateClaim: (ids) =>
+      guard(async (): Promise<ClaimEstimate> => {
+        const bridge = requireBridge(deployment)
+        ids.forEach(assertKidId)
+        const unique = [...new Set(ids)]
+        const [gasPrice, simulated] = await Promise.all([
+          getGasPrice(client),
+          unique.length > 0 ? simulatedClaimGas(bridge, unique) : Promise.resolve(null),
+        ])
+        const gas = simulated ?? typicalClaimGas(Math.max(1, unique.length))
+        return { gas: Number(gas), gasPrice: gasPrice.toString(), fee: (gas * gasPrice).toString(), simulated: simulated !== null }
       }),
   }
 }

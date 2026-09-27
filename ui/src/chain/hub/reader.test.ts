@@ -1,5 +1,10 @@
 import { fromHex, toBase64, toUtf8 } from '@cosmjs/encoding'
-import { QuerySmartContractStateRequest, QuerySmartContractStateResponse } from 'cosmjs-types/cosmwasm/wasm/v1/query'
+import {
+  QueryContractInfoRequest,
+  QueryContractInfoResponse,
+  QuerySmartContractStateRequest,
+  QuerySmartContractStateResponse,
+} from 'cosmjs-types/cosmwasm/wasm/v1/query'
 import { describe, expect, it } from 'vitest'
 import { isBridgeError, type BridgeErrorCode } from '../types'
 import {
@@ -149,6 +154,43 @@ describe('escrow reads', () => {
     for (const read of escrowReads) await expect(codeOf(read())).resolves.toBe('NotLive')
     expect(calls).toHaveLength(0)
     await expect(hub.ownedKids(REECE)).resolves.toEqual([])
+  })
+})
+
+describe('contractInfo', () => {
+  const info = (admin: string) => ({ address: ESCROW, contract_info: { code_id: '750', creator: REECE, admin, label: 'escrow' } })
+
+  it('reads code id and admin over REST; an empty admin is null', async () => {
+    const { hub } = reader(({ url }) => {
+      expect(url.pathname).toBe(`/cosmwasm/wasm/v1/contract/${ESCROW}`)
+      return json(info(REECE))
+    })
+    await expect(hub.contractInfo(ESCROW)).resolves.toEqual({ codeId: 750, admin: REECE })
+    const none = reader(() => json(info('')))
+    await expect(none.hub.contractInfo(ESCROW)).resolves.toEqual({ codeId: 750, admin: null })
+  })
+
+  it('falls back to abci_query on RPC', async () => {
+    const { hub } = reader(({ url, body }) => {
+      if (url.origin === REST) return new Response('', { status: 502 })
+      const { params } = body as { params: { path: string; data: string } }
+      expect(params.path).toBe('/cosmwasm.wasm.v1.Query/ContractInfo')
+      expect(QueryContractInfoRequest.decode(fromHex(params.data)).address).toBe(CW721)
+      const value = QueryContractInfoResponse.encode({
+        address: CW721,
+        contractInfo: { codeId: 431n, creator: REECE, admin: REECE, label: 'ReeceBadTest', ibcPortId: '', ibc2PortId: '' },
+      }).finish()
+      return rpcResult({ response: { code: 0, value: toBase64(value) } })
+    })
+    await expect(hub.contractInfo(CW721)).resolves.toEqual({ codeId: 431, admin: REECE })
+  })
+
+  it('refuses a malformed answer and a malformed address', async () => {
+    const { hub } = reader(() => json({ contract_info: { code_id: 'x', admin: '' } }), { rpc: [] })
+    await expect(codeOf(hub.contractInfo(ESCROW))).resolves.toBe('Network')
+    const { hub: h2, calls } = reader(() => json(info('')))
+    await expect(codeOf(h2.contractInfo('cosmos1nope'))).resolves.toBe('Unknown')
+    expect(calls).toHaveLength(0)
   })
 })
 

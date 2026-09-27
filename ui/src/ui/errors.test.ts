@@ -40,6 +40,13 @@ describe('errorCopy', () => {
     expect(safe).toMatchObject({ Network: false, Unknown: false, UserRejected: true, AlreadyBridged: true })
   })
 
+  it('has plain copy for the send guards, and none of them could have sent anything', () => {
+    expect(errorCopy(new BridgeError('TooManyKids'), { action: 'send' })).toMatchObject({ body: expect.stringContaining('up to 100') as string, safe: true })
+    expect(errorCopy(new BridgeError('FeeTooHigh'), { action: 'send' })).toMatchObject({ title: 'That fee looks wrong', safe: true })
+    expect(errorCopy(new BridgeError('ClientFrozen'), { action: 'send' })).toMatchObject({ title: 'The bridge is stuck for now', safe: true })
+    expect(errorCopy(new BridgeError('ZeroRecipient'), { action: 'send' }).body).not.toContain('escrow said no')
+  })
+
   it('treats anything that is not a BridgeError as Unknown', () => {
     expect(errorCopy(new Error('boom'), { action: 'read' }).title).toBe('Something went wrong')
     expect(errorCopy('boom', { action: 'read' }).title).toBe('Something went wrong')

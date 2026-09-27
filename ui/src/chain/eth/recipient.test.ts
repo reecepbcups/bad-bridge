@@ -46,6 +46,23 @@ describe('checkRecipient', () => {
     expect(checkRecipient(`0x${OTHER.slice(2).toUpperCase()}`)).toMatchObject({ ok: true, address: OTHER })
   })
 
+  it('refuses precompiles, system addresses and well-known burn addresses', () => {
+    for (const input of [
+      '0x0000000000000000000000000000000000000001', // ecrecover
+      '0x0000000000000000000000000000000000000100', // p256verify
+      '0x000000000000000000000000000000000000ffff',
+      '0x000000000000000000000000000000000000FFFF',
+      '0x000000000000000000000000000000000000dEaD',
+      '0x000000000000000000000000000000000000dead',
+    ]) {
+      expect(checkRecipient(input), input).toEqual({ ok: false, reason: 'burn' })
+    }
+    // just past the reserved range is an ordinary address
+    expect(checkRecipient('0x0000000000000000000000000000000000010000')).toMatchObject({ ok: true })
+    // a checksum typo is still reported as a typo first
+    expect(checkRecipient('0x000000000000000000000000000000000000DeaD')).toEqual({ ok: false, reason: 'checksum' })
+  })
+
   it('knows the connected wallet whatever the case', () => {
     expect(checkRecipient(CHECKSUMMED, CHECKSUMMED.toLowerCase() as `0x${string}`)).toMatchObject({ ok: true, isConnected: true })
     expect(checkRecipient(CHECKSUMMED.toLowerCase(), CHECKSUMMED)).toMatchObject({ ok: true, isConnected: true })

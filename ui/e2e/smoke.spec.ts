@@ -43,7 +43,7 @@ for (const colorScheme of SCHEMES) {
           await expect(page.getByRole('heading', { level: 2, name: t.heading })).toBeVisible()
           await expect(page.getByText(t.ready, { exact: true }).first()).toBeVisible()
           await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: t.tab })).toHaveAttribute('aria-current', 'page')
-          await expect(page.getByRole('list', { name: 'Bridge steps' })).toBeVisible({ visible: t.name === 'bridge' })
+          await expect(page.getByRole('region', { name: 'Bridge steps' })).toBeVisible({ visible: t.name === 'bridge' })
           await page.evaluate(() => document.fonts.ready)
 
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)

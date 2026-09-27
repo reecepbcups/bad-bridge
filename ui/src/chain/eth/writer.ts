@@ -1,4 +1,4 @@
-import { encodeFunctionData, type Account, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
+import type { Account, Address, Chain, Client, Hex, Transport } from 'viem'
 import {
   estimateContractGas,
   getChainId,
@@ -20,7 +20,7 @@ import {
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
 import { decodeRevert, revertToBridgeError, toEthError } from './errors'
-import { assertKidId, createEthReader, requireBridge } from './reader'
+import { assertKidId, claimCalls, createEthReader, requireBridge } from './reader'
 
 /** A client that can sign and send: a viem WalletClient, or wagmi's connector client. */
 export type SignerClient = Client<Transport, Chain | undefined, Account>
@@ -111,14 +111,6 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     return writeContract(wallet, { ...request, account: wallet.account, chain })
   }
 
-  function calls(bridge: Address, ids: readonly KidId[], allowFailure: boolean) {
-    return ids.map((id) => ({
-      target: bridge,
-      allowFailure,
-      callData: encodeFunctionData({ abi: bridgeAbi, functionName: 'claim', args: [id] }),
-    }))
-  }
-
   async function claimMany(wallet: SignerClient, bridge: Address, ids: readonly KidId[], report: Report): Promise<Hex> {
     // allowFailure: a kid someone else claims meanwhile doesn't sink the rest. Simulate to drop any that fail now.
     const { result } = await simulateContract(publicClient, {
@@ -126,7 +118,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       address: multicall3,
       abi: multicall3WriteAbi,
       functionName: 'aggregate3',
-      args: [calls(bridge, ids, true)],
+      args: [claimCalls(bridge, ids, true)],
     })
     const ok = ids.filter((_, i) => result[i]?.success)
     if (ok.length === 0) {
@@ -143,7 +135,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       address: multicall3,
       abi: multicall3WriteAbi,
       functionName: 'aggregate3',
-      args: [calls(bridge, ok, false)],
+      args: [claimCalls(bridge, ok, false)],
     })
     report('signing')
     return writeContract(wallet, {
@@ -152,7 +144,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       address: multicall3,
       abi: multicall3WriteAbi,
       functionName: 'aggregate3',
-      args: [calls(bridge, ok, true)],
+      args: [claimCalls(bridge, ok, true)],
       gas: (strictGas * GAS_MARGIN_NUM) / GAS_MARGIN_DEN,
     })
   }

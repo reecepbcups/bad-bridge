@@ -1,12 +1,14 @@
 import { bytesToHex } from 'viem'
 import type { Deployment } from '../../config/deployments'
 import { decodeBech32 } from '../bech32'
+import { typicalClaimGas } from '../eth/gas'
 import {
   BridgeError,
   stageReporter,
   toBridgeError,
   type EthAddress,
   type EthReader,
+  type ContractInfo,
   type EthWriter,
   type HubAddress,
   type HubReader,
@@ -30,6 +32,15 @@ const ETH_OPTIONS: WalletOption[] = [
   { id: 'coinbaseWallet', name: 'Coinbase Wallet', installed: true },
   { id: 'walletConnect', name: 'WalletConnect', installed: true },
 ]
+
+/**
+ * Trust facts the demo shows on About: an escrow with no admin, a collection with one (the real Bad Kids cw721's
+ * admin), and an upgradeable Eureka router, so both the ✓ and the caveat copy get exercised.
+ */
+const DEMO_COLLECTION_ADMIN = 'cosmos1s8qx0zvz8yd6e4x0mqmqf7fr9vvfn6226hkvrq'
+const DEMO_ROUTER_IMPLEMENTATION: EthAddress = '0x17fa3A98D0239a399927C7c3CCdE142e08Deb7B5'
+/** 2 gwei. */
+const DEMO_GAS_PRICE = 2_000_000_000n
 
 function delay(ms: number): Promise<void> {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
@@ -62,6 +73,12 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
     latestBlock: () => read(() => sim.latestBlock()),
     block: (height) => read(() => sim.block(height)),
     escrowCw721: () => read(() => deployment.hub.cw721),
+    contractInfo: (address) =>
+      read((): ContractInfo => {
+        if (address === deployment.hub.cw721) return { codeId: 434, admin: DEMO_COLLECTION_ADMIN }
+        if (address === escrow) return { codeId: 750, admin: null }
+        throw new BridgeError('Unknown', `demo: no contract ${address}`)
+      }),
   }
 
   const eth: EthReader = {
@@ -72,6 +89,20 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
       read(() => {
         if (!escrow) throw new BridgeError('NotLive', 'no escrow in this deployment')
         return bytesToHex(decodeBech32(escrow).data)
+      }),
+    bridgeWiring: () =>
+      read(() => {
+        if (!deployment.eth.bridge) throw new BridgeError('NotLive', 'no bridge in this deployment')
+        const { router, clientId, lightClient } = deployment.eth
+        return { router, clientId, lightClient, chainId: deployment.hub.chainId }
+      }),
+    proxyImplementation: (address) =>
+      read(() => (address.toLowerCase() === deployment.eth.router.toLowerCase() ? DEMO_ROUTER_IMPLEMENTATION : null)),
+    estimateClaim: (ids) =>
+      read(() => {
+        if (!deployment.eth.bridge) throw new BridgeError('NotLive', 'no bridge in this deployment')
+        const gas = typicalClaimGas(Math.max(1, new Set(ids).size))
+        return { gas: Number(gas), gasPrice: DEMO_GAS_PRICE.toString(), fee: (gas * DEMO_GAS_PRICE).toString(), simulated: false }
       }),
   }
 

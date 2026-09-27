@@ -7,7 +7,7 @@ import { sha256 } from 'viem'
 import { describe, expect, it, vi } from 'vitest'
 import { isBridgeError, type BridgeErrorCode } from '../types'
 import { chainError, CW721, ESCROW, json, mockFetch, RECIPIENT, REECE, REST, type Req, testDeployment } from './fixtures'
-import { computeFee, createHubWriter, type HubWriterConfig } from './writer'
+import { checkFee, clampGasPrice, computeFee, createHubWriter, MAX_GAS_PRICE, type HubWriterConfig } from './writer'
 
 const ON_CHAIN_PUBKEY = 'Ai1Z5WKc04LI7a2c0/wViuQL+hdAzteRn2YW2X67Z0LN'
 const SIMULATED_GAS = '223236' // what sending ReeceBadTest #1 simulated to on mainnet
@@ -95,6 +95,59 @@ describe('fees', () => {
   })
 })
 
+describe('fee caps', () => {
+  it('clamps the gas price at 0.05', () => {
+    expect(MAX_GAS_PRICE).toBe('0.05')
+    expect(clampGasPrice('0.005000000000000000')).toBe('0.005000000000000000')
+    expect(clampGasPrice('0.05')).toBe('0.05')
+    expect(clampGasPrice('0.050000000000000000')).toBe('0.050000000000000000')
+    expect(clampGasPrice('0.050000000000000001')).toBe('0.05')
+    expect(clampGasPrice('2.5')).toBe('0.05')
+    expect(clampGasPrice('not a number')).toBe('0.05')
+  })
+
+  it('refuses simulated gas over 600k per kid plus 300k', () => {
+    expect(() => checkFee(1, 900_000n, 1n, 'uatom')).not.toThrow()
+    expect(() => checkFee(1, 900_001n, 1n, 'uatom')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+    expect(() => checkFee(3, 2_100_000n, 1n, 'uatom')).not.toThrow()
+    expect(() => checkFee(3, 2_100_001n, 1n, 'uatom')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+  })
+
+  it('refuses a fee over 250k plus 50k uatom per kid', () => {
+    expect(() => checkFee(1, 223_236n, 300_000n, 'uatom')).not.toThrow()
+    expect(() => checkFee(1, 223_236n, 300_001n, 'uatom')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+    expect(() => checkFee(100, 22_323_600n, 5_250_000n, 'uatom')).not.toThrow()
+    expect(() => checkFee(100, 22_323_600n, 5_250_001n, 'uatom')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+  })
+
+  it('a normal send is far inside both caps, and the worst the clamp allows still hits the fee cap', () => {
+    const normal = computeFee(223_236n * 100n, '0.005')
+    expect(() => checkFee(100, 223_236n * 100n, normal.fee, 'uatom')).not.toThrow()
+    const worst = computeFee(100n * 600_000n + 300_000n, MAX_GAS_PRICE)
+    expect(() => checkFee(100, 100n * 600_000n + 300_000n, worst.fee, 'uatom')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+  })
+
+  it('a lying feemarket price is clamped, not signed', async () => {
+    const wallet = await DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos')
+    const address = (await wallet.getAccounts())[0]?.address ?? ''
+    const lying = () => json({ price: { denom: 'uatom', amount: '2.500000000000000000' } })
+    await expect(writer(chain({ price: lying() }).fetch).simulateSend([1], RECIPIENT)).resolves.toMatchObject({ amount: '23440' }) // 312531 × 0.05 × 1.5
+    const { fetch, seen } = chain({ price: lying() })
+    await writer(fetch, { address, signer: wallet }).send([1], RECIPIENT)
+    const auth = AuthInfo.decode(TxRaw.decode(seen.broadcast[0] ?? new Uint8Array()).authInfoBytes)
+    expect(auth.fee?.amount).toEqual([{ denom: 'uatom', amount: '23440' }])
+  })
+
+  it('a lying simulate is FeeTooHigh and the wallet never opens', async () => {
+    const { fetch, seen } = chain({ simulate: () => json({ gas_info: { gas_wanted: '75000000', gas_used: '40000000' } }) })
+    const getSigner = vi.fn(() => DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos'))
+    await expect(codeOf(writer(fetch).simulateSend([1], RECIPIENT))).resolves.toMatchObject({ code: 'FeeTooHigh' })
+    await expect(codeOf(writer(fetch, { signer: getSigner }).send([1], RECIPIENT))).resolves.toMatchObject({ code: 'FeeTooHigh' })
+    expect(getSigner).not.toHaveBeenCalled()
+    expect(seen.broadcast).toHaveLength(0)
+  })
+})
+
 describe('simulateSend', () => {
   it('simulates one tx with a send_nft per kid and prices it from the feemarket', async () => {
     const { fetch, seen } = chain()
@@ -128,6 +181,7 @@ describe('simulateSend', () => {
     ['19-byte recipient', [1], '0xd2c392084761cb6e44c544b6f39dcc001fde97', 'BadRecipient'],
     ['duplicate kid', [1, 1], RECIPIENT, 'BadTokenId'],
     ['no kids', [], RECIPIENT, 'BadTokenId'],
+    ['batch over 100 kids', Array.from({ length: 101 }, (_, i) => i + 1), RECIPIENT, 'TooManyKids'],
   ] as const)('refuses a %s before touching the network', async (_, ids, recipient, code) => {
     const { fetch, calls } = chain()
     await expect(codeOf(writer(fetch).simulateSend(ids, recipient as `0x${string}`))).resolves.toMatchObject({ code })

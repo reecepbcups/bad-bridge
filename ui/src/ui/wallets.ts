@@ -23,3 +23,29 @@ const GET_IT: Readonly<Record<string, string>> = {
 export function getItUrl(option: Pick<WalletOption, 'id' | 'name'>): string | null {
   return GET_IT[option.id.toLowerCase()] ?? GET_IT[option.name.toLowerCase()] ?? null
 }
+
+// connector ids of wallets that need no extension: a phone app or a QR code (wagmi, graz, the demo)
+const WEB_WALLETS = new Set(['coinbasewalletsdk', 'coinbasewallet', 'walletconnect'])
+
+/** Coinbase Wallet's SDK and WalletConnect: "installed" is always true for them, but nothing is. */
+export function isWebWallet(option: Pick<WalletOption, 'id'>): boolean {
+  return WEB_WALLETS.has(option.id.toLowerCase())
+}
+
+/** No browser extension to connect with: the case where a phone user needs the wallet app's own browser. */
+export function noExtension(options: readonly WalletOption[]): boolean {
+  return options.length > 0 && !options.some((o) => o.installed && !isWebWallet(o))
+}
+
+/**
+ * Opens `url` in Keplr Mobile's in-app browser. The universal link from Keplr's deeplink docs
+ * (chainapsis/keplr-wallet docs/mobile/deeplink.md): works on iOS and Android, and falls back to keplr.app without the app.
+ */
+export function keplrBrowserLink(url: string): string {
+  return `https://deeplink.keplr.app/web-browser?url=${encodeURIComponent(url)}`
+}
+
+/** Opens `url` in MetaMask Mobile's in-app browser (MetaMask's documented dapp deeplink, no scheme in the path). */
+export function metamaskBrowserLink(url: string): string {
+  return `https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, '')}`
+}

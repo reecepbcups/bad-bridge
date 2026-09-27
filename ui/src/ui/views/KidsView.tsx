@@ -1,19 +1,22 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useBridge } from '../../chain/context'
 import { href, navigate } from '../../router'
 import { POLL_MS, useHealth, useRememberedTrips, useTrips } from '../../trips/hooks'
+import type { KidId } from '../../chain/types'
 import type { Health, Trip, TripQuery } from '../../trips/types'
-import { ClaimButton, useClaimFlow, type ClaimFlow } from '../Claim'
+import { ClaimButton, claimingHint, useClaimFlow, type ClaimFlow } from '../Claim'
 import { Card } from '../chrome/Card'
 import { ErrorNote } from '../ErrorNote'
+import { ExtLink } from '../ExtLink'
 import { dateTime, shortAddress, timeAgo } from '../format'
-import { useHubNow } from '../hooks'
+import { useFocusWhenDone, useHubNow } from '../hooks'
 import { KidArt, KidDoodle } from '../KidArt'
 import { parseLookup, type Lookup } from '../lookup'
 import { ShareLink } from '../ShareLink'
 import { StageList, TrackBar } from '../StageList'
 import { inFlight, STAGE_LINE, STAGE_PILL } from '../stages'
 import { SwitchChain } from '../SwitchChain'
+import { useTitle } from '../useTitle'
 import './tracker.css'
 
 // The tracker: every kid headed to an address (or sent by one), wherever it is on the bridge.
@@ -25,7 +28,7 @@ export function KidsView({ address }: { address?: string }) {
   const connectedEth = ethWallet.status === 'connected' ? ethWallet.address : undefined
   const connectedHub = hubWallet.status === 'connected' ? hubWallet.address : undefined
 
-  const lookup: Lookup | null = address ? parseLookup(address, deployment.hub.bech32Prefix) : null
+  const lookup: Lookup | null = address ? parseLookup(address, deployment.hub.bech32Prefix, deployment.collectionSize) : null
   const query: TripQuery = lookup
     ? lookup.kind === 'eth'
       ? { eth: lookup.address }
@@ -36,7 +39,16 @@ export function KidsView({ address }: { address?: string }) {
   const active = Boolean(query.eth || query.hub || query.ids?.length)
   const trips = useTrips(query)
   const health = useHealth()
-  const claim = useClaimFlow()
+  const flow = useClaimFlow()
+  // kids claimed from this page, kept here: a claim can re-key the list and remount its rows
+  const [claimed, setClaimed] = useState<readonly KidId[]>([])
+  const claim: ClaimFlow = {
+    ...flow,
+    run: (ids) => {
+      setClaimed(ids)
+      return flow.run(ids)
+    },
+  }
 
   const target = lookup && (lookup.kind === 'eth' || lookup.kind === 'hub') ? lookup.address : null
   const mine = !target || [connectedEth, connectedHub].some((a) => a?.toLowerCase() === target.toLowerCase())
@@ -46,10 +58,12 @@ export function KidsView({ address }: { address?: string }) {
   const ready = list.filter((t) => t.stage === 'ready')
   const home = list.filter((t) => t.stage === 'home-eth').length
   const crossing = list.filter((t) => inFlight(t.stage)).length
+  const title = mine ? 'My kids' : `Kids for ${shortAddress(target ?? '')}`
+  useTitle(title)
 
   return (
     <Card>
-      <h2 tabIndex={-1}>{mine ? 'My kids' : `Kids for ${shortAddress(target ?? '')}`}</h2>
+      <h2 tabIndex={-1}>{title}</h2>
       <p className="lede">
         {lookup?.kind === 'hub'
           ? 'Every kid this Hub address sent, wherever it is on the bridge.'
@@ -108,7 +122,7 @@ export function KidsView({ address }: { address?: string }) {
             </div>
             {ready.length > 1 && (
               <ClaimButton ids={ready.map((t) => t.tokenId)} flow={claim}>
-                {`Claim all ${ready.length}`}
+                {ready.length === 2 ? 'Claim both' : `Claim all ${ready.length}`}
               </ClaimButton>
             )}
           </div>
@@ -127,9 +141,13 @@ export function KidsView({ address }: { address?: string }) {
           {trips.error && <ErrorNote error={trips.error} action="read" onRetry={trips.refetch} live={false} />}
           <ul className="list" aria-label="Kids on the bridge">
             {list.map((t) => (
-              <TripRow key={t.tokenId} trip={t} health={health.data} claim={claim} />
+              <TripRow key={t.tokenId} trip={t} health={health.data} claim={claim} claimedHere={claimed.includes(t.tokenId)} />
             ))}
           </ul>
+          {/* always in the page, so screen readers hear each change */}
+          <p className={claim.stage ? 'hint center' : 'sr-only'} role="status">
+            {claim.stage ? claimingHint(claim.stage, ethWallet.walletName) : ''}
+          </p>
         </>
       )}
 
@@ -166,13 +184,13 @@ function LookupBox({ initial }: { initial: string }) {
       role="search"
       onSubmit={(e) => {
         e.preventDefault()
-        const parsed = parseLookup(value, deployment.hub.bech32Prefix)
+        const parsed = parseLookup(value, deployment.hub.bech32Prefix, deployment.collectionSize)
         if (parsed.kind === 'bad') return setError(parsed.message)
         setError(null)
         navigate(parsed.kind === 'kid' ? { name: 'kid', id: parsed.id } : { name: 'kids', address: parsed.address })
       }}
     >
-      <label className="sr-only" htmlFor={inputId}>
+      <label className="hint full" htmlFor={inputId}>
         Ethereum address, Hub address or kid number
       </label>
       <input
@@ -221,18 +239,31 @@ function LoadingRows() {
   )
 }
 
-export function TripRow({ trip, health, claim }: { trip: Trip; health: Health | undefined; claim: ClaimFlow }) {
+export function TripRow({
+  trip,
+  health,
+  claim,
+  claimedHere = false,
+}: {
+  trip: Trip
+  health: Health | undefined
+  claim: ClaimFlow
+  /** Claimed from this page: when it lands, its Claim button goes away, so focus moves to the kid. */
+  claimedHere?: boolean
+}) {
   const { deployment } = useBridge()
   const hubNow = useHubNow()
+  const idLink = useRef<HTMLAnchorElement>(null)
+  useFocusWhenDone(claimedHere, trip.stage === 'home-eth', idLink)
   const pill = STAGE_PILL[trip.stage]
   const token = trip.stage === 'home-eth' ? deployment.explorer.ethToken(trip.tokenId) : null
   const sent = trip.sentAt ? `Sent ${sentWhen(trip.sentAt, hubNow)}` : null
-  const line = [sent, STAGE_LINE[trip.stage], trip.stuck ? 'the prover looks slow' : null].filter(Boolean).join(' · ')
+  const line = [sent, STAGE_LINE[trip.stage], trip.stuck ? 'waiting for a prover' : null].filter(Boolean).join(' · ')
   return (
     <li className="item">
       <KidArt id={trip.tokenId} size={72} decorative />
       <div className="top">
-        <a className="id" href={href({ name: 'kid', id: trip.tokenId })}>
+        <a className="id" href={href({ name: 'kid', id: trip.tokenId })} ref={idLink}>
           #{trip.tokenId}
         </a>
         <span className={pill.className}>{pill.label}</span>
@@ -244,9 +275,9 @@ export function TripRow({ trip, health, claim }: { trip: Trip; health: Health | 
           </ClaimButton>
         )}
         {token && (
-          <a className="btn ghost" href={token} target="_blank" rel="noopener" aria-label={`View #${trip.tokenId} on Etherscan`}>
-            View ↗
-          </a>
+          <ExtLink className="btn ghost" href={token} aria-label={`View #${trip.tokenId} on Etherscan`}>
+            View
+          </ExtLink>
         )}
       </div>
       <div className="info">

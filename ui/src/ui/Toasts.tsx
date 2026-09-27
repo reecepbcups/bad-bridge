@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { ExtLink } from './ExtLink'
 import './Toasts.css'
 
 // Short-lived notices for tx results that happen away from where you clicked (claims in the tracker,
@@ -19,6 +20,8 @@ interface ToastEntry extends Toast {
 const ToastContext = createContext<((toast: Toast) => void) | null>(null)
 
 const TOAST_MS = 8_000
+/** A toast with a link lasts longer: it's there to be clicked. */
+const LINK_TOAST_MS = 20_000
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<readonly ToastEntry[]>([])
@@ -40,21 +43,30 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/** Goes away on its own, but never while the pointer or focus is on it. */
 function ToastCard({ toast, onDismiss }: { toast: ToastEntry; onDismiss: (id: number) => void }) {
+  const [hover, setHover] = useState(false)
+  const [focus, setFocus] = useState(false)
+  const held = hover || focus
   useEffect(() => {
-    const t = setTimeout(() => onDismiss(toast.id), TOAST_MS)
+    if (held) return
+    const t = setTimeout(() => onDismiss(toast.id), toast.link ? LINK_TOAST_MS : TOAST_MS)
     return () => clearTimeout(t)
-  }, [toast.id, onDismiss])
+  }, [toast.id, toast.link, onDismiss, held])
   return (
-    <div className={`toast ${toast.tone}`}>
+    <div
+      className={`toast ${toast.tone}`}
+      onPointerEnter={() => setHover(true)}
+      onPointerLeave={() => setHover(false)}
+      onFocus={() => setFocus(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocus(false)
+      }}
+    >
       <div>
         <b>{toast.title}</b>
         {toast.body && <span>{toast.body}</span>}
-        {toast.link && (
-          <a href={toast.link.href} target="_blank" rel="noopener">
-            {toast.link.label} ↗
-          </a>
-        )}
+        {toast.link && <ExtLink href={toast.link.href}>{toast.link.label}</ExtLink>}
       </div>
       <button type="button" className="x" aria-label="Dismiss" onClick={() => onDismiss(toast.id)}>
         ×

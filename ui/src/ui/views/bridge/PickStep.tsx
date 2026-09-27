@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useBridge } from '../../../chain/context'
-import type { KidId } from '../../../chain/types'
+import { MAX_KIDS_PER_SEND, type KidId } from '../../../chain/types'
 import { isLive } from '../../../config/deployments'
+import { href } from '../../../router'
 import { useOwnedKids, useRememberedTrips, useTrips } from '../../../trips/hooks'
 import type { Trip } from '../../../trips/types'
 import { CHAIN_NAME, WalletOptions } from '../../Connect'
@@ -9,20 +10,31 @@ import { ErrorNote } from '../../ErrorNote'
 import { kidWord, shortDate } from '../../format'
 import { KidArt, KidDoodle } from '../../KidArt'
 import { inFlight } from '../../stages'
+import { useTitle } from '../../useTitle'
 import { useFlow } from './flow'
+import { findKids, FIND_FROM, togglePick } from './pick'
 
 /** How many tiles to show before "show more". */
 export const PAGE = 60
 
 export function PickStep() {
   const { deployment, hubWallet } = useBridge()
+  const heading = useRef<HTMLHeadingElement>(null)
+  useTitle(isLive(deployment) ? 'Bridge a kid' : 'Not open yet')
   if (!isLive(deployment)) return <NotLive />
   return (
     <>
-      <h2 tabIndex={-1}>Who's crossing?</h2>
+      <h2 tabIndex={-1} ref={heading}>
+        Who's crossing?
+      </h2>
       <p className="lede">These Bad Kids live in your Hub wallet. Pick the ones moving to Ethereum.</p>
       <CrossingNudge />
-      {hubWallet.status === 'connected' ? <KidPicker /> : <ConnectHub />}
+      {hubWallet.status === 'connected' ? (
+        <KidPicker />
+      ) : (
+        // the wallet list goes away on connect: land on the heading, just above the kids
+        <ConnectHub onConnected={() => heading.current?.focus()} />
+      )}
     </>
   )
 }
@@ -37,10 +49,10 @@ function NotLive() {
         yet: your kids are safe where they are.
         {/* COPY: not-live state */}
       </p>
-      <div className="celebrate" aria-hidden="true">
-        <KidDoodle id={11} />
-        <KidDoodle id={22} />
-        <KidDoodle id={30} />
+      <div className="celebrate">
+        {[663, 6413, 9176].map((id) => (
+          <KidArt key={id} id={id} size={110} eager decorative />
+        ))}
       </div>
       <p className="muted">
         Meanwhile, read <a href="#/about">how it works</a>.
@@ -49,11 +61,11 @@ function NotLive() {
   )
 }
 
-function ConnectHub() {
+function ConnectHub({ onConnected }: { onConnected: () => void }) {
   return (
     <div className="connect-inline">
       <p className="muted">Connect your {CHAIN_NAME.hub} wallet to see your kids.</p>
-      <WalletOptions chain="hub" />
+      <WalletOptions chain="hub" onConnected={onConnected} />
     </div>
   )
 }
@@ -79,15 +91,17 @@ function KidPicker() {
   const owned = useOwnedKids()
   const { flow, update } = useFlow()
   const [limit, setLimit] = useState(PAGE)
+  const [query, setQuery] = useState('')
+  const findId = useId()
 
   const kids = owned.data
   const pickable = new Set((kids ?? []).filter((t) => t.stage === 'home-hub').map((t) => t.tokenId))
   // a picked kid that left (sent from elsewhere) drops out of the pick
   const picked = kids ? flow.picked.filter((id) => pickable.has(id)) : flow.picked
   const n = picked.length
+  const full = n >= MAX_KIDS_PER_SEND
 
-  const toggle = (id: KidId) =>
-    update((f) => ({ picked: f.picked.includes(id) ? f.picked.filter((p) => p !== id) : [...f.picked, id] }))
+  const toggle = (id: KidId) => update({ picked: togglePick(picked, id).picked })
 
   if (!kids) {
     if (owned.error) return <ErrorNote error={owned.error} action="read" onRetry={owned.refetch} />
@@ -125,16 +139,46 @@ function KidPicker() {
     )
   }
 
-  const shown = kids.slice(0, limit)
-  const rest = kids.length - shown.length
+  const found = findKids(kids, query)
+  const shown = found.slice(0, limit)
+  const rest = found.length - shown.length
   return (
     <>
       {owned.error && <ErrorNote error={owned.error} action="read" onRetry={owned.refetch} live={false} />}
-      <div className="kids" role="group" aria-label="Your kids">
-        {shown.map((trip) => (
-          <KidTile key={trip.tokenId} trip={trip} picked={picked.includes(trip.tokenId)} onToggle={toggle} />
-        ))}
-      </div>
+      {kids.length > FIND_FROM && (
+        <div className="find">
+          <label className="hint" htmlFor={findId}>
+            Find a kid by number
+          </label>
+          <input
+            id={findId}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="#…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      )}
+      {found.length === 0 ? (
+        <p className="muted" role="status">
+          No kid #{query.replace(/[#\s]/g, '')} in this wallet.
+        </p>
+      ) : (
+        <div className="kids" role="group" aria-label="Your kids">
+          {shown.map((trip) => (
+            <KidTile
+              key={trip.tokenId}
+              trip={trip}
+              picked={picked.includes(trip.tokenId)}
+              blocked={full && !picked.includes(trip.tokenId)}
+              onToggle={toggle}
+            />
+          ))}
+        </div>
+      )}
       {rest > 0 && (
         <div className="row more-row">
           <button type="button" className="btn ghost" onClick={() => setLimit((l) => l + PAGE)}>
@@ -143,16 +187,13 @@ function KidPicker() {
           <span className="muted">{rest} more in this wallet</span>
         </div>
       )}
-      <div className="row">
+      <div className="row pick-bar">
         <span className="muted" aria-live="polite">
           {n ? `${n} ${kidWord(n)} picked` : 'Pick at least one kid'}
+          {full && <b className="cap"> · Up to {MAX_KIDS_PER_SEND} at a time</b>}
+          {/* COPY: pick cap */}
         </span>
-        <button
-          type="button"
-          className="btn"
-          disabled={n === 0}
-          onClick={() => update({ step: 'review', picked })}
-        >
+        <button type="button" className="btn" disabled={n === 0} onClick={() => update({ step: 'review', picked })}>
           Next →
         </button>
       </div>
@@ -160,28 +201,47 @@ function KidPicker() {
   )
 }
 
-function KidTile({ trip, picked, onToggle }: { trip: Trip; picked: boolean; onToggle: (id: KidId) => void }) {
-  const home = trip.stage === 'home-hub'
-  const sub = home
-    ? 'on the Hub'
-    : trip.stage === 'home-eth'
-      ? trip.sentAt
-        ? `crossed ${shortDate(trip.sentAt)}`
-        : 'on Ethereum'
-      : trip.stage === 'ready'
-        ? 'ready to claim'
-        : 'crossing'
+/** A kid at home is a toggle. One that already left links to its trip. */
+function KidTile({
+  trip,
+  picked,
+  blocked,
+  onToggle,
+}: {
+  trip: Trip
+  picked: boolean
+  /** The pick is full: this one can't join it. */
+  blocked: boolean
+  onToggle: (id: KidId) => void
+}) {
+  if (trip.stage !== 'home-hub') {
+    const sub =
+      trip.stage === 'home-eth'
+        ? trip.sentAt
+          ? `crossed ${shortDate(trip.sentAt)}`
+          : 'on Ethereum'
+        : trip.stage === 'ready'
+          ? 'ready to claim'
+          : 'crossing'
+    return (
+      <a className="kid away" href={href({ name: 'kid', id: trip.tokenId })}>
+        <KidArt id={trip.tokenId} decorative />
+        <span className="name">#{trip.tokenId}</span>
+        <span className="sub">{sub}</span>
+      </a>
+    )
+  }
   return (
     <button
       type="button"
       className="kid"
-      aria-pressed={home ? picked : undefined}
-      disabled={!home}
+      aria-pressed={picked}
+      aria-disabled={blocked || undefined}
       onClick={() => onToggle(trip.tokenId)}
     >
       <KidArt id={trip.tokenId} decorative />
       <span className="name">#{trip.tokenId}</span>
-      <span className="sub">{sub}</span>
+      <span className="sub">on the Hub</span>
     </button>
   )
 }

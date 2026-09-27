@@ -10,6 +10,9 @@ export const ERROR_CODES = [
   'ZeroRecipient',
   'AlreadyBridged',
   'NotOwner',
+  'TooManyKids',
+  'FeeTooHigh',
+  'ClientFrozen',
   'NotProven',
   'UserRejected',
   'InsufficientFunds',
@@ -62,7 +65,7 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
   }),
   ZeroRecipient: () => ({
     title: "That's the zero address",
-    body: 'Kids minted there are gone forever, so the escrow said no. Nothing was sent.',
+    body: 'Kids sent there are gone forever, so the send was stopped before it started. Nothing was sent.',
   }),
   AlreadyBridged: ({ kid }) => ({
     title: `${kid === 'that kid' ? 'One of these kids' : kid} already crossed`,
@@ -71,6 +74,18 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
   NotOwner: ({ kid }) => ({
     title: `${kid === 'that kid' ? 'One of these kids' : kid} isn't in this wallet`,
     body: "The Hub says this wallet doesn't own it anymore. It may have moved since the list loaded. Nothing was sent.",
+  }),
+  TooManyKids: () => ({
+    title: "That's a lot of kids at once",
+    body: 'Send up to 100 at a time. Take some out and send the rest after. Nothing was sent.',
+  }),
+  FeeTooHigh: () => ({
+    title: 'That fee looks wrong',
+    body: 'The Hub quoted far more than a send should cost, so we stopped before your wallet opened. Nothing was sent. Try again in a bit.',
+  }),
+  ClientFrozen: () => ({
+    title: 'The bridge is stuck for now',
+    body: "Ethereum has stopped accepting updates from the Hub, so sending is off. Nothing was sent. Kids that already made it across can still be claimed.",
   }),
   NotProven: ({ kid }) => ({
     title: 'Not quite there yet',

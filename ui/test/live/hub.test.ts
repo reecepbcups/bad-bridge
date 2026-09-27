@@ -79,6 +79,12 @@ describe('Hub reads (reece-test, mainnet)', () => {
     await expect(hub.escrowCw721()).resolves.toBe(d.hub.cw721)
   })
 
+  it('contractInfo(): the test escrow (code 750) and ReeceBadTest both have reece as admin; Bad Kids has its own', async () => {
+    await expect(hub.contractInfo(d.hub.escrow ?? '')).resolves.toEqual({ codeId: 750, admin: REECE })
+    await expect(hub.contractInfo(d.hub.cw721)).resolves.toEqual({ codeId: 431, admin: REECE })
+    await expect(hub.contractInfo(BAD_KIDS)).resolves.toEqual({ codeId: 434, admin: 'cosmos1s8qx0zvz8yd6e4x0mqmqf7fr9vvfn6226hkvrq' })
+  })
+
   it('latestBlock() and block(Hs)', async () => {
     const latest = await hub.latestBlock()
     expect(latest.height).toBeGreaterThan(33092463)

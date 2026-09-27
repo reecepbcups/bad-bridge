@@ -36,6 +36,14 @@ export const GAS_MULTIPLIER_TENTHS = 14n
 export const PRICE_HEADROOM_TENTHS = 15n
 /** Used when the feemarket query fails. The Hub's floor on 2026-09-27. Headroom still applies. */
 export const FALLBACK_GAS_PRICE = '0.005'
+/** A feemarket price above this is clamped to it: 10× the flat 0.005 the Hub has sat at, so a lying endpoint can't inflate the fee. */
+export const MAX_GAS_PRICE = '0.05'
+/** A send_nft simulates to ~223k gas. More than 600k per kid plus 300k means the endpoint is lying: refuse. */
+export const MAX_GAS_PER_KID = 600_000n
+export const MAX_GAS_BASE = 300_000n
+/** The most a send may cost, in the fee denom's smallest unit: 0.25 ATOM plus 0.05 ATOM per kid. Above it: FeeTooHigh. */
+export const MAX_FEE_BASE = 250_000n
+export const MAX_FEE_PER_KID = 50_000n
 
 const SECP256K1_PUBKEY = '/cosmos.crypto.secp256k1.PubKey'
 // sdk ErrTxInMempoolCache: the same bytes were already accepted, e.g. by an earlier endpoint that then timed out
@@ -94,6 +102,26 @@ export function computeFee(gasUsed: bigint, gasPrice: string): { gas: bigint; fe
   const numer = gas * price.num * PRICE_HEADROOM_TENTHS
   const denom = price.den * 10n
   return { gas, fee: (numer + denom - 1n) / denom }
+}
+
+/** `price`, or MAX_GAS_PRICE if it's higher. */
+export function clampGasPrice(price: string): string {
+  const p = parseDecimal(price)
+  const max = parseDecimal(MAX_GAS_PRICE)
+  if (!p || !max) return MAX_GAS_PRICE
+  return p.num * max.den > max.num * p.den ? MAX_GAS_PRICE : price
+}
+
+/**
+ * Refuses a simulate or fee a real send could never need. The wallet signs the fee as given (preferNoSetFee), so
+ * this is what stands between a lying Hub endpoint and an absurd fee.
+ */
+export function checkFee(kids: number, gasUsed: bigint, fee: bigint, denom: string): void {
+  const n = BigInt(kids)
+  const maxGas = n * MAX_GAS_PER_KID + MAX_GAS_BASE
+  if (gasUsed > maxGas) throw new BridgeError('FeeTooHigh', `the Hub simulated ${gasUsed} gas for ${kids} kids; more than ${maxGas} means something's off`)
+  const maxFee = MAX_FEE_BASE + n * MAX_FEE_PER_KID
+  if (fee > maxFee) throw new BridgeError('FeeTooHigh', `fee ${fee}${denom} for ${kids} kids is over the ${maxFee}${denom} ceiling`)
 }
 
 /** Finds the BaseAccount fields inside BaseAccount or any vesting wrapper (REST JSON). */
@@ -172,10 +200,14 @@ async function simulateGas(t: Transport, txBytes: Uint8Array): Promise<bigint> {
   })
 }
 
-/** Feemarket base price for `denom`, or FALLBACK_GAS_PRICE if it can't be read. Headroom is applied by computeFee. */
+/**
+ * Feemarket base price for `denom`, clamped to MAX_GAS_PRICE, or FALLBACK_GAS_PRICE if it can't be read.
+ * Headroom is applied by computeFee.
+ */
 export async function gasPrice(t: Transport, denom: string): Promise<string> {
+  let price: string
   try {
-    return await t.run('gas price', {
+    price = await t.run('gas price', {
       async rest(base, http) {
         const body = await http.get(`${base}/feemarket/v1/gas_price/${denom}`)
         const price = isRecord(body) && isRecord(body.price) ? body.price : {}
@@ -187,6 +219,7 @@ export async function gasPrice(t: Transport, denom: string): Promise<string> {
   } catch {
     return FALLBACK_GAS_PRICE
   }
+  return clampGasPrice(price)
 }
 
 type Broadcast = { accepted: true } | { accepted: false; code: number; log: string }
@@ -284,6 +317,7 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
       gasPrice(t, hub.gasDenom),
     ])
     const { gas, fee } = computeFee(used, price)
+    checkFee(msgs.length, used, fee, hub.gasDenom)
     return { msgs, account, estimate: { gas: Number(gas), amount: fee.toString(), denom: hub.gasDenom } }
   }
 

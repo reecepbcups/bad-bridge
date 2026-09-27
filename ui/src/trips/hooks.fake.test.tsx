@@ -11,6 +11,7 @@ import {
   fakeHubWriter,
   HUB_A,
   HUB_B,
+  LIVE,
   networkError,
   NOT_LIVE,
   NOW_HEIGHT,
@@ -18,6 +19,7 @@ import {
 } from './fakes'
 import {
   POLL_MS,
+  useClaimEstimate,
   useClaimKids,
   useConfigSanity,
   useHealth,
@@ -27,6 +29,7 @@ import {
   useSendKids,
   useTrip,
   useTrips,
+  useTrustFacts,
 } from './hooks'
 import { rememberedTrip, rememberTrips, resetTripStorage } from './storage'
 import type { QueryState, Trip } from './types'
@@ -394,6 +397,24 @@ describe('useConfigSanity', () => {
     expect(sanity.problems.every((p) => typeof p.message === 'string' && p.message.length > 0)).toBe(true)
   })
 
+  it('flags a bridge wired to another router or light client', async () => {
+    const chain = fakeChain()
+    chain.wiring = { ...chain.wiring, router: BOB, chainId: 'theta-testnet-001' }
+    const { wrapper } = fakeBridge(chain)
+    const { result } = renderHook(() => useConfigSanity(), { wrapper })
+    const sanity = await loaded(result)
+    expect(sanity).toMatchObject({ ok: false, status: 'mismatch', problems: [{ code: 'BridgeClient' }] })
+    expect(sanity.problems[0]?.message).toMatch(/asks router .* not IBC Eureka's .*follows theta-testnet-001/)
+  })
+
+  it('treats a failed wiring read as unknown, not ok', async () => {
+    const chain = fakeChain()
+    chain.fail.bridgeWiring = networkError()
+    const { wrapper } = fakeBridge(chain)
+    const { result } = renderHook(() => useConfigSanity(), { wrapper })
+    expect(await loaded(result)).toEqual({ ok: false, status: 'unknown', problems: [] })
+  })
+
   it('treats a failed read as unknown, not ok, and says why', async () => {
     const chain = fakeChain()
     chain.fail.bridgeEscrow = networkError()
@@ -744,3 +765,103 @@ describe('useSendEstimate', () => {
   })
 })
 
+
+describe('useSendKids: fresh light client check', () => {
+  it('refuses when the client froze after health was read, and never touches the wallet', async () => {
+    const chain = fakeChain()
+    const hubWriter = fakeHubWriter(chain, HUB_A)
+    const { wrapper, eth } = fakeBridge(chain, { hubWriter })
+    const { result } = renderHook(() => ({ send: useSendKids(), health: useHealth() }), { wrapper })
+    await waitFor(() => expect(result.current.health.data?.frozen).toBe(false))
+
+    chain.client = { ...chain.client, frozen: true }
+    const calls = eth.client.mock.calls.length
+    await act(() => expect(result.current.send.run([1], ALICE)).rejects.toMatchObject({ code: 'ClientFrozen' }))
+    expect(eth.client.mock.calls.length).toBeGreaterThan(calls)
+    expect(hubWriter.send).not.toHaveBeenCalled()
+    // the banner catches up without waiting for the next poll
+    await waitFor(() => expect(result.current.health.data?.frozen).toBe(true))
+  })
+
+  it('refuses when the client can\'t be read, as Network, and never touches the wallet', async () => {
+    const chain = fakeChain()
+    const hubWriter = fakeHubWriter(chain, HUB_A)
+    const { wrapper } = fakeBridge(chain, { hubWriter })
+    const { result } = renderHook(() => useSendKids(), { wrapper })
+    chain.fail.client = networkError()
+    await act(() => expect(result.current.run([1], ALICE)).rejects.toMatchObject({ code: 'Network' }))
+    expect(hubWriter.send).not.toHaveBeenCalled()
+  })
+
+  it('sends when the client is live', async () => {
+    const chain = fakeChain()
+    const hubWriter = fakeHubWriter(chain, HUB_A)
+    const { wrapper } = fakeBridge(chain, { hubWriter })
+    const { result } = renderHook(() => useSendKids(), { wrapper })
+    await act(() => expect(result.current.run([1], ALICE)).resolves.toMatchObject({ height: NOW_HEIGHT }))
+    expect(hubWriter.send).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useTrustFacts', () => {
+  const REECE = 'cosmos1reece3m8g4m3d0qrpj93rnnseudnpzhrey64rr'
+
+  it('reads the escrow and collection admins and whether the router is upgradeable', async () => {
+    const chain = fakeChain()
+    chain.contracts.set(LIVE.hub.escrow ?? '', { codeId: 750, admin: REECE })
+    chain.contracts.set(LIVE.hub.cw721, { codeId: 431, admin: null })
+    chain.proxies.set(LIVE.eth.router.toLowerCase(), BOB)
+    const { wrapper } = fakeBridge(chain)
+    const { result } = renderHook(() => useTrustFacts(), { wrapper })
+    expect(await loaded(result)).toEqual({
+      escrow: { codeId: 750, admin: REECE },
+      collection: { codeId: 431, admin: null },
+      routerUpgradeable: true,
+    })
+    expect(result.current.error).toBeNull()
+  })
+
+  it('leaves a fact it couldn\'t read undefined, and says why', async () => {
+    const chain = fakeChain()
+    chain.contracts.set(LIVE.hub.escrow ?? '', { codeId: 750, admin: null })
+    chain.fail.proxyImplementation = networkError()
+    const { wrapper } = fakeBridge(chain)
+    const { result } = renderHook(() => useTrustFacts(), { wrapper })
+    // the cw721 isn't in the fake chain, so its read fails too
+    expect(await loaded(result)).toEqual({ escrow: { codeId: 750, admin: null }, collection: undefined, routerUpgradeable: undefined })
+    expect(result.current.error).not.toBeNull()
+  })
+
+  it('has no escrow or router facts before the bridge is live', async () => {
+    const chain = fakeChain()
+    chain.contracts.set(NOT_LIVE.hub.cw721, { codeId: 434, admin: 'cosmos1s8qx0zvz8yd6e4x0mqmqf7fr9vvfn6226hkvrq' })
+    const { wrapper, eth } = fakeBridge(chain, { deployment: NOT_LIVE })
+    const { result } = renderHook(() => useTrustFacts(), { wrapper })
+    expect(await loaded(result)).toEqual({
+      escrow: null,
+      collection: { codeId: 434, admin: 'cosmos1s8qx0zvz8yd6e4x0mqmqf7fr9vvfn6226hkvrq' },
+      routerUpgradeable: null,
+    })
+    expect(eth.proxyImplementation).not.toHaveBeenCalled()
+  })
+})
+
+describe('useClaimEstimate', () => {
+  it('prices exactly the kids asked for, and one typical kid for an empty list', async () => {
+    const chain = fakeChain({ gasPrice: 2_000_000_000n })
+    chain.proven.set(3, ALICE).set(5, ALICE)
+    const { wrapper, eth } = fakeBridge(chain)
+    const { result } = renderHook(() => ({ two: useClaimEstimate([5, 3]), none: useClaimEstimate([]) }), { wrapper })
+    expect(await loaded({ get current() { return result.current.two } })).toEqual({ gas: 109_000, gasPrice: '2000000000', fee: '218000000000000', simulated: true })
+    expect(await loaded({ get current() { return result.current.none } })).toMatchObject({ gas: 79_000, fee: '158000000000000' })
+    expect(eth.estimateClaim).toHaveBeenCalledWith([3, 5])
+    expect(eth.estimateClaim).toHaveBeenCalledWith([])
+  })
+
+  it('stays idle before the bridge is live', () => {
+    const { wrapper, eth } = fakeBridge(fakeChain(), { deployment: NOT_LIVE })
+    const { result } = renderHook(() => useClaimEstimate([1]), { wrapper })
+    expect(result.current.data).toBeUndefined()
+    expect(eth.estimateClaim).not.toHaveBeenCalled()
+  })
+})

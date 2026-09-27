@@ -67,14 +67,15 @@ for (const id of KIDS_HOME) {
     await expect(main.getByText('Home on Ethereum.', { exact: true })).toBeVisible()
 
     const facts = main.locator('dl.facts')
-    await expect(facts.locator('dt', { hasText: 'Owner now' }).locator('+ dd')).toContainText(RECIPIENT)
     await expect(facts.locator('dt', { hasText: 'Headed to' }).locator('+ dd')).toContainText(RECIPIENT)
+    // still with the recipient, so no separate "Owner now" line
+    await expect(facts.locator('dt', { hasText: 'Owner now' })).toHaveCount(0)
     await expect(facts.locator('dt', { hasText: 'Sent by' }).locator('+ dd').getByRole('link')).toHaveAttribute(
       'href',
       `https://www.mintscan.io/cosmos/address/${REECE}`,
     )
-    await expect(main.getByRole('link', { name: 'Etherscan ↗' })).toHaveAttribute('href', `https://etherscan.io/nft/${BRIDGE}/${id}`)
-    await expect(main.getByRole('link', { name: 'OpenSea ↗' })).toHaveAttribute('href', `https://opensea.io/assets/ethereum/${BRIDGE}/${id}`)
+    await expect(main.getByRole('link', { name: /^Etherscan/ })).toHaveAttribute('href', `https://etherscan.io/nft/${BRIDGE}/${id}`)
+    await expect(main.getByRole('link', { name: /^OpenSea/ })).toHaveAttribute('href', `https://opensea.io/assets/ethereum/${BRIDGE}/${id}`)
     // all four steps done
     await expect(main.locator('ol.stages li.done')).toHaveCount(4)
     await screenshot(page, testInfo, `kid-${id}`)
@@ -86,7 +87,7 @@ test(`#${KID_ON_HUB} is still on the Hub`, async ({ page }, testInfo) => {
   const main = page.getByRole('main')
   await expect(main.getByText('on the Hub', { exact: true })).toBeVisible()
   await expect(main.getByText("Still on the Cosmos Hub. It hasn't been sent across.")).toBeVisible()
-  await expect(main.getByRole('link', { name: 'Etherscan ↗' })).toHaveCount(0)
+  await expect(main.getByRole('link', { name: /^Etherscan/ })).toHaveCount(0)
   await expect(main.locator('dl.facts dt')).toHaveCount(0)
   await screenshot(page, testInfo, `kid-${KID_ON_HUB}`)
 })
@@ -119,7 +120,7 @@ test('the tracker finds the same trips by the Hub sender', async ({ page }, test
   await screenshot(page, testInfo, 'kids-by-hub')
 })
 
-test('About shows the real contracts, a live health strip and a passing contracts check', async ({ page }, testInfo) => {
+test('About shows the real contracts, a live health strip, the trust facts and a passing contracts check', async ({ page }, testInfo) => {
   await page.goto('./#/about')
   const main = page.getByRole('main')
   for (const address of [ESCROW, CW721, BRIDGE, LIGHT_CLIENT]) await expect(main.getByRole('link', { name: address })).toBeVisible()
@@ -136,13 +137,37 @@ test('About shows the real contracts, a live health strip and a passing contract
   // past the send heights of #2 and #3, and Ethereum behind (or level with) the Hub
   expect(client).toBeGreaterThan(33_092_463)
   expect(hub).toBeGreaterThanOrEqual(client)
-  await expect(health).not.toContainText('Paused')
+  await expect(health).not.toContainText('Stuck')
 
-  // the startup sanity check (escrow accepts the cw721, bridge.ESCROW() is the escrow) passes, so Send isn't blocked
-  await expect(main.getByText('✓ Checked live: the escrow only takes ReeceBadTest, and the Ethereum bridge only trusts this escrow.')).toBeVisible()
+  // trust facts, read live (2026-09-27): reece holds the admin of both the test escrow and ReeceBadTest, and the
+  // Eureka router is an EIP-1967 proxy
+  const trust = main.locator('ul.trust')
+  await expect(trust.getByText('This test escrow has an admin')).toBeVisible()
+  await expect(trust.getByText('The ReeceBadTest contract has an admin')).toBeVisible()
+  await expect(trust.getByRole('link', { name: /cosmos1ree…64rr/ }).first()).toHaveAttribute('href', `https://www.mintscan.io/cosmos/address/${REECE}`)
+  await expect(trust.getByText(/the Eureka router that points to it can be upgraded/)).toBeVisible()
+  await expect(page.getByText(/no admin keys/i)).toHaveCount(0)
+
+  // the startup sanity check (escrow config, bridge.ESCROW(), ROUTER(), clientId() and the client's chain) passes
+  await expect(
+    main.getByText(
+      '✓ Checked live: the escrow only takes ReeceBadTest, the Ethereum bridge only trusts this escrow, and it follows the Cosmos Hub through the light client above.',
+    ),
+  ).toBeVisible()
   await expect(page.getByText('Sending is switched off')).toHaveCount(0)
-  await expect(page.getByText('The bridge is paused')).toHaveCount(0)
+  await expect(page.getByText('The bridge is stuck for now')).toHaveCount(0)
+  await page.getByText('What does it cost?').click()
+  await expect(main.getByText(/right now about [\d.]+ ETH for one kid/)).toBeVisible()
   await screenshot(page, testInfo, 'about')
+})
+
+test('the real build ignores ?demo', async ({ page }) => {
+  await page.goto('./?demo=paused,instant#/about')
+  const main = page.getByRole('main')
+  await expect(main.getByText('These are the test deployment (ReeceBadTest).', { exact: false })).toBeVisible()
+  await expect(main.getByText('This is the demo', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('not real chain data')).toHaveCount(0)
+  await expect(main.getByLabel('Bridge health')).toContainText('Hub block')
 })
 
 test('the pick screen without a Hub wallet offers the wallets, none installed', async ({ page }, testInfo) => {
@@ -159,13 +184,16 @@ test('the pick screen without a Hub wallet offers the wallets, none installed', 
   // no WalletConnect without VITE_WC_PROJECT_ID, and nothing offers to connect
   await expect(wallets.getByRole('listitem')).toHaveCount(3)
   await expect(wallets.getByRole('button')).toHaveCount(0)
+  // so phone users are sent to their wallet app's browser first
+  await expect(main.getByText("Open this page in the Keplr or Leap app's browser.", { exact: false })).toBeVisible()
+  await expect(main.getByRole('link', { name: 'Open in Keplr' })).toHaveAttribute('href', /^https:\/\/deeplink\.keplr\.app\/web-browser\?url=http/)
   await screenshot(page, testInfo, 'pick')
 })
 
 test('the header connect sheets list the right wallets', async ({ page }, testInfo) => {
   await page.goto('./#/kids')
-  // "connecting…" until the wallet code has loaded
-  await page.getByRole('button', { name: 'connect Cosmos Hub' }).click()
+  // disabled until the wallet code has loaded, with the same label
+  await page.getByRole('button', { name: 'Connect Hub' }).click()
   const hubSheet = page.getByRole('dialog', { name: 'Connect Cosmos Hub' })
   await expect(hubSheet.getByRole('listitem')).toHaveCount(3)
   await expect(hubSheet.getByText('not installed', { exact: true })).toHaveCount(3)
@@ -173,13 +201,14 @@ test('the header connect sheets list the right wallets', async ({ page }, testIn
   await page.keyboard.press('Escape')
   await expect(hubSheet).toBeHidden()
 
-  await page.getByRole('button', { name: 'connect Ethereum' }).click()
+  await page.getByRole('button', { name: 'Connect Ethereum' }).click()
   const ethSheet = page.getByRole('dialog', { name: 'Connect Ethereum' })
   // no extension in headless Chromium: no EIP-6963 wallets and no window.ethereum, so only Coinbase's web wallet
   const items = ethSheet.getByRole('listitem')
   await expect(items).toHaveCount(1)
   await expect(items.first()).toContainText('Coinbase Wallet')
-  await expect(items.first().getByText('installed', { exact: true })).toBeVisible()
+  await expect(items.first().getByText('app or QR code', { exact: true })).toBeVisible()
+  await expect(ethSheet.getByText("Open this page in your wallet app's browser", { exact: false })).toBeVisible()
   await expect(ethSheet.getByRole('button', { name: 'Connect Coinbase Wallet' })).toBeEnabled()
   await screenshot(page, testInfo, 'connect-eth')
 })

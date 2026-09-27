@@ -25,16 +25,23 @@ test('send and claim say where the transaction is, from the writers’ own progr
   await page.getByLabel('Got it, one way only').check()
   await expect(sendButton(page)).toHaveText('Send 1 kid')
   await sendButton(page).click()
+  // pending: the button says where it is, keeps focus (no drop to <body>), and a status line announces it
   await expect(sendButton(page)).toHaveText('Check Keplr…')
-  await expect(page.getByText('Approve it in Keplr. Once signed, it lands on the Hub in a few seconds.')).toBeVisible()
+  await expect(sendButton(page)).toBeFocused()
+  await expect(page.getByRole('status').filter({ hasText: 'Approve it in Keplr. Once signed, it lands on the Hub in a few seconds.' })).toBeVisible()
   await expect(page.getByRole('heading', { level: 2, name: 'Crossing the bridge…' })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Now: waiting for Ethereum to catch up' })).toBeAttached()
+  await expect(page).toHaveTitle('Crossing… · Bad Bridge')
 
   await skipAhead(page)
+  await expect(page.getByRole('status').filter({ hasText: 'Now: Ethereum caught up, now being proven' })).toBeAttached()
   await skipAhead(page)
   await expect(page.getByRole('heading', { level: 2, name: 'It made it across!' })).toBeVisible()
   await page.getByRole('button', { name: 'Claim 1 kid' }).click()
-  await expect(page.getByRole('button', { name: 'Check MetaMask…' })).toBeDisabled()
-  await expect(page.getByText('Approve it in MetaMask.')).toBeVisible()
+  const claiming = page.getByRole('button', { name: 'Check MetaMask…' })
+  await expect(claiming).toBeDisabled()
+  await expect(claiming).toBeFocused()
+  await expect(page.getByRole('status').filter({ hasText: 'Approve it in MetaMask.' })).toBeVisible()
   await expect(page.getByRole('heading', { level: 2, name: 'Welcome to Ethereum, #9176' })).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -47,10 +54,12 @@ test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, don
   const hubWallets = page.getByRole('list', { name: 'Cosmos Hub wallets' })
   await expect(hubWallets.getByRole('link', { name: /Get it.*Cosmostation/ })).toBeVisible()
   await hubWallets.getByRole('button', { name: 'Connect Keplr' }).click()
-  await expect(page.getByRole('button', { name: /Cosmos Hub wallet cosmos1q8m…3fxl/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Cosmos Hub cosmos1q8m…3fxl/ })).toBeVisible()
+  // the list went away with the connect: focus lands on the heading above the kids
+  await expect(page.getByRole('heading', { level: 2, name: "Who's crossing?" })).toBeFocused()
 
-  // pick two; #8073 already crossed, so it's disabled with its stage
-  await expect(page.getByRole('button', { name: /#8073 crossed Sep 23/ })).toBeDisabled()
+  // pick two; #8073 already crossed, so its tile links to its trip instead
+  await expect(page.getByRole('link', { name: /#8073 crossed Sep 23/ })).toHaveAttribute('href', '#/kid/8073')
   const kid = page.getByRole('button', { name: /^#9176 on the Hub/ })
   await kid.click()
   await expect(kid).toHaveAttribute('aria-pressed', 'true')
@@ -74,42 +83,45 @@ test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, don
 
   await page.getByLabel('Got it, one way only').check()
   await expect(page.getByText('≈ 0.00175 ATOM network fee.')).toBeVisible()
-  await expect(page.getByText('Keplr asks you to sign once, for all 2 kids.')).toBeVisible()
+  await expect(page.getByText('Keplr asks you to sign once, for both kids.')).toBeVisible()
   await expect(sendButton(page)).toHaveText('Send 2 kids')
   await sendButton(page).click()
 
   // crossing: real stage details and a way back from any device
   await expect(page.getByRole('heading', { level: 2, name: 'Crossing the bridge…' })).toBeFocused()
-  const steps = page.getByRole('list', { name: 'Bridge steps' })
+  const steps = page.getByRole('region', { name: 'Bridge steps' })
   await expect(steps.locator('[aria-current="step"]')).toContainText('Cross')
   await expect(page.getByText('Right now Ethereum is about 10 min behind the Hub.', { exact: false })).toBeVisible()
   await expect(page.locator('a[href^="https://www.mintscan.io/cosmos/tx/"]').first()).toBeVisible()
   await expect(page.getByText(/\d+ blocks to go\./)).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: 'My kids' })).toHaveAttribute('href', `#/kids/${DEMO_ETH}`)
-  await expect(page.getByRole('img', { name: /Your 2 kids on the bridge.*ethereum catches up/ })).toBeVisible()
+  await expect(page.getByRole('img', { name: /Your 2 kids on the bridge.*waiting for Ethereum to catch up/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Copy a link to check later' })).toBeVisible()
 
   // the demo relays, then proves
   await skipAhead(page)
-  await expect(page.getByRole('img', { name: /making the proof/ })).toBeVisible()
+  await expect(page.getByRole('img', { name: /now being proven/ })).toBeVisible()
+  await expect(page.getByText('Ethereum has caught up; now the proof is being made.', { exact: false })).toBeVisible()
   await skipAhead(page)
 
   // claim: one tx for both
   await expect(page.getByRole('heading', { level: 2, name: 'They made it across!' })).toBeVisible()
   await expect(steps.locator('[aria-current="step"]')).toContainText('Claim')
-  await expect(page.getByText('One Ethereum transaction claims them all.', { exact: false })).toBeVisible()
+  await expect(page.getByText('One Ethereum transaction claims both.', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'Claim 2 kids' }).click()
 
   // done: stamp, explorer links from the deployment
   await expect(page.getByRole('heading', { level: 2, name: 'Welcome to Ethereum, #9176 & #6413' })).toBeVisible()
   await expect(page.getByText('minted on Ethereum', { exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'View on Etherscan ↗' })).toHaveAttribute('href', /^https:\/\/etherscan\.io\/tx\/0x[0-9a-f]{64}$/)
-  await expect(page.getByRole('link', { name: '#9176 ↗' })).toHaveAttribute('href', `https://opensea.io/assets/ethereum/${BRIDGE}/9176`)
-  await expect(page.getByRole('status').getByText('Claimed #6413 & #9176')).toBeVisible()
+  await expect(page.getByRole('link', { name: /^View on Etherscan/ })).toHaveAttribute('href', /^https:\/\/etherscan\.io\/tx\/0x[0-9a-f]{64}$/)
+  await expect(page.getByRole('link', { name: /^#9176\b/ })).toHaveAttribute('href', `https://opensea.io/assets/ethereum/${BRIDGE}/9176`)
+  await expect(page.getByRole('status').getByText(/Claimed (#9176 & #6413|#6413 & #9176)/)).toBeVisible()
 
-  // bridge another: they're no longer pickable
+  // bridge another: they're no longer pickable, just links to their trips
   await page.getByRole('button', { name: 'Bridge another' }).click()
   await expect(page.getByRole('heading', { level: 2, name: "Who's crossing?" })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^#9176/ })).toBeDisabled()
+  await expect(page.getByRole('link', { name: /^#9176/ })).toHaveAttribute('href', '#/kid/9176')
+  await expect(page.getByRole('button', { name: /^#9176/ })).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
@@ -166,7 +178,7 @@ test.describe('Send refuses or fails', () => {
     await expect(sendButton(page)).toBeEnabled()
   })
 
-  test('a frozen light client shows the paused banner and hard-disables Send', async ({ page }) => {
+  test('a frozen light client shows the stuck banner and hard-disables Send', async ({ page }) => {
     await page.goto(`${DEMO}#/`)
     await pickAndReview(page, [9176])
     await page.getByLabel('Got it, one way only').check()
@@ -175,12 +187,12 @@ test.describe('Send refuses or fails', () => {
     const bar = page.getByRole('navigation', { name: 'Demo controls' })
     await bar.getByRole('button', { name: 'more' }).click()
     await bar.getByRole('button', { name: 'frozen' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'The bridge is paused' })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: 'The bridge is stuck for now' })).toBeVisible()
     await expect(sendButton(page)).toBeDisabled()
-    await expect(page.getByText('The bridge is paused, so sending is off.')).toBeVisible()
+    await expect(page.getByText('The bridge is stuck for now, so sending is off.')).toBeVisible()
 
     await bar.getByRole('button', { name: 'frozen' }).click()
-    await expect(page.getByText('The bridge is paused')).toHaveCount(0)
+    await expect(page.getByText('The bridge is stuck for now')).toHaveCount(0)
     await expect(sendButton(page)).toBeEnabled()
   })
 
@@ -194,6 +206,9 @@ test.describe('Send refuses or fails', () => {
     await expect(sendButton(page)).toBeDisabled()
     await expect(page.getByText('Tick “This address can hold NFTs” to send to a contract.')).toBeVisible()
     await page.getByLabel('This address can hold NFTs').check()
+    // "Got it" was for the old address, so it un-ticked when the address changed
+    await expect(page.getByLabel('Got it, one way only')).not.toBeChecked()
+    await page.getByLabel('Got it, one way only').check()
     await expect(sendButton(page)).toBeEnabled()
     // changing the address un-ticks it
     await page.getByLabel('Ethereum address').fill(BRIDGE)
@@ -264,7 +279,7 @@ test('keyboard: tiles toggle with Space, focus lands on each new heading', async
 
 test('big wallets: 60 tiles, then "show more"', async ({ page }) => {
   await page.goto('./?demo=paused,instant,many#/')
-  const tiles = page.getByRole('group', { name: 'Your kids' }).getByRole('button')
+  const tiles = page.getByRole('group', { name: 'Your kids' }).locator('.kid')
   await expect(tiles).toHaveCount(60)
   await expect(page.getByText('96 more in this wallet')).toBeVisible()
   await page.getByRole('button', { name: 'Show 60 more' }).click()
@@ -277,10 +292,55 @@ test('big wallets: 60 tiles, then "show more"', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^#1000 on the Hub/ }).locator('svg.doodle')).toBeVisible()
 })
 
+test.describe('big wallets on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('Next stays in reach while scrolling the grid', async ({ page }) => {
+    await page.goto('./?demo=paused,instant,many#/')
+    const next = page.getByRole('button', { name: 'Next →' })
+    await page.getByRole('button', { name: /^#1003 on the Hub/ }).click()
+    for (const y of [0, 1500, 4000]) {
+      await page.evaluate((top) => window.scrollTo({ top }), y)
+      await expect(next).toBeInViewport({ ratio: 1 })
+    }
+    await expect(page.getByText('1 kid picked')).toBeInViewport()
+  })
+
+  test('find a kid by number, and pick at most 100', async ({ page }) => {
+    await page.goto('./?demo=paused,instant,many#/')
+    const find = page.getByLabel('Find a kid by number')
+    const grid = page.getByRole('group', { name: 'Your kids' })
+    await find.fill('#104')
+    await expect(grid.locator('.kid')).toHaveCount(11) // #1040–#1049 and #1104
+    await find.fill('77777')
+    await expect(page.getByRole('status').filter({ hasText: 'No kid #77777 in this wallet.' })).toBeVisible()
+    await find.fill('')
+
+    await page.getByRole('button', { name: 'Show 60 more' }).click()
+    const home = grid.getByRole('button', { name: / on the Hub/ })
+    for (let i = 0; i < 100; i++) await home.nth(i).click()
+    await expect(page.getByText('100 kids picked')).toBeVisible()
+    await expect(page.getByText('· Up to 100 at a time')).toBeVisible()
+    // the 101st is refused, and says why
+    const extra = home.nth(100)
+    await expect(extra).toHaveAttribute('aria-disabled', 'true')
+    await extra.click({ force: true }) // aria-disabled: Playwright won't click it unforced
+    await expect(extra).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByText('100 kids picked')).toBeVisible()
+    // letting one go makes room again
+    await home.nth(0).click()
+    await expect(page.getByText('99 kids picked')).toBeVisible()
+    await expect(page.getByText('Up to 100 at a time')).toHaveCount(0)
+  })
+})
+
 test('not live yet: no escrow, no sending', async ({ page }) => {
   await page.goto('./?demo=paused,instant,notlive#/')
   await expect(page.getByRole('heading', { level: 2, name: "The bridge isn't open yet" })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Next →' })).toHaveCount(0)
+  // no steps to show for a bridge that isn't there, and real kids instead of doodles
+  await expect(page.getByRole('region', { name: 'Bridge steps' })).toHaveCount(0)
+  await expect(page.locator('.celebrate img')).toHaveCount(3)
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'About' }).click()
   await expect(page.getByText('not live yet')).toHaveCount(2)
 })

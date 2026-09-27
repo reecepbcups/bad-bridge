@@ -20,6 +20,7 @@ import { bridgeAbi, lightClientAbi, multicall3WriteAbi } from '../abi'
 export const BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
 export const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
 export const LIGHT_CLIENT: Address = '0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9'
+export const ROUTER: Address = '0x3aF134307D5Ee90faa2ba9Cdba14ba66414CF1A7'
 export const ESCROW: Hex = '0x10cf6f62e7c951ef8308c35e1cf6df956249b331e4181b798cd45d02158d1f50'
 export const ALICE: Address = getAddress('0xd2c392084761cb6e44c544b6f39dcc001fde9775')
 export const BOB: Address = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
@@ -48,6 +49,16 @@ export class FakeChain {
   code = new Map<string, Hex>()
   latestHeight = 33_100_000n
   frozen = false
+  /** clientState().chainId */
+  clientChainId = 'cosmoshub-4'
+  /** bridge.clientId() */
+  clientId = 'cosmoshub-0'
+  /** bridge.ROUTER() */
+  router: Address = ROUTER
+  /** eth_getStorageAt: lowercase address → slot → value */
+  storage = new Map<string, Map<string, Hex>>()
+  /** eth_gasPrice, wei */
+  gasPrice = 2_000_000_000n
   /** The chain the wallet reports; the node is always mainnet. */
   walletChainId = 1
   /** eth_call to ownerOf for these ids reverts with junk instead of ERC721NonexistentToken. */
@@ -96,6 +107,12 @@ export class FakeChain {
       }
       case 'eth_getCode':
         return Promise.resolve(this.code.get((first as string).toLowerCase()) ?? '0x')
+      case 'eth_getStorageAt': {
+        const [address, slot] = params as [string, Hex]
+        return Promise.resolve(this.storage.get(address.toLowerCase())?.get(slot.toLowerCase()) ?? `0x${'0'.repeat(64)}`)
+      }
+      case 'eth_gasPrice':
+        return Promise.resolve(numberToHex(this.gasPrice))
       case 'eth_getTransactionReceipt':
         return Promise.resolve(this.receipt(first as Hex))
       default:
@@ -156,7 +173,7 @@ export class FakeChain {
         data: encodeFunctionResult({
           abi: lightClientAbi,
           functionName: 'clientState',
-          result: ['cosmoshub-4', { numerator: 2, denominator: 3 }, { revisionNumber: 4n, revisionHeight: this.latestHeight }, 1_209_600, 1_814_400, this.frozen, 1],
+          result: [this.clientChainId, { numerator: 2, denominator: 3 }, { revisionNumber: 4n, revisionHeight: this.latestHeight }, 1_209_600, 1_814_400, this.frozen, 1],
         }),
       }
     }
@@ -189,6 +206,10 @@ export class FakeChain {
         return result('lightClient', LIGHT_CLIENT)
       case 'ESCROW':
         return result('ESCROW', ESCROW)
+      case 'ROUTER':
+        return result('ROUTER', this.router)
+      case 'clientId':
+        return { ok: true, data: encodeFunctionResult({ abi: bridgeAbi, functionName: 'clientId', result: this.clientId }) }
       case 'proven':
         return result('proven', this.proven.get(call.args[0]) ?? zeroAddress)
       case 'ownerOf': {

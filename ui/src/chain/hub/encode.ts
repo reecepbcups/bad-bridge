@@ -3,7 +3,7 @@
 import { fromBase64, toBase64 } from '@cosmjs/encoding'
 import type { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx'
 import { bytesToHex, getAddress, hexToBytes } from 'viem'
-import { BridgeError, type EthAddress, type HubAddress, type KidId } from '../types'
+import { BridgeError, MAX_KIDS_PER_SEND, type EthAddress, type HubAddress, type KidId } from '../types'
 
 export const MAX_U32 = 4_294_967_295
 export const MSG_EXECUTE_CONTRACT = '/cosmwasm.wasm.v1.MsgExecuteContract'
@@ -19,9 +19,10 @@ export function isKidId(n: unknown): n is KidId {
   return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= MAX_U32
 }
 
-/** Rejects an empty list, a non-u32 id or a repeat (the second copy would fail on chain). */
+/** Rejects an empty list, more than MAX_KIDS_PER_SEND, a non-u32 id or a repeat (the second copy would fail on chain). */
 export function checkKidIds(ids: readonly KidId[]): void {
   if (ids.length === 0) throw new BridgeError('BadTokenId', 'no kids to send')
+  if (ids.length > MAX_KIDS_PER_SEND) throw new BridgeError('TooManyKids', `${ids.length} kids in one send; the most is ${MAX_KIDS_PER_SEND}`)
   const seen = new Set<KidId>()
   for (const id of ids) {
     if (!isKidId(id)) throw new BridgeError('BadTokenId', `${String(id)} is not a u32 token id`)

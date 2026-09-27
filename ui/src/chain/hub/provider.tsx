@@ -27,6 +27,8 @@ export function grazOptions(deployment: Deployment, projectId: string | undefine
           options: {
             projectId,
             metadata: { name: 'Bad Bridge', description: 'Bring your Bad Kids to Ethereum', url: origin, icons: [] },
+            // no WalletConnect analytics
+            telemetryEnabled: false,
           },
         }
       : undefined,

@@ -1,13 +1,15 @@
 import { useBridge } from '../../../chain/context'
-import { useClaimKids } from '../../../trips/hooks'
+import { useClaimEstimate, useClaimKids } from '../../../trips/hooks'
 import type { Trip } from '../../../trips/types'
-import { claimingHint, claimingLabel } from '../../Claim'
+import { claimedToast, claimingHint, claimingLabel, formatEth } from '../../Claim'
 import { ConnectButton } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
+import { ExtLink } from '../../ExtLink'
 import { kidList, kidWord, shortAddress } from '../../format'
 import { KidArt } from '../../KidArt'
 import { useToast } from '../../Toasts'
 import { SwitchChain } from '../../SwitchChain'
+import { useTitle } from '../../useTitle'
 import { useFlow, type SentTrip } from './flow'
 
 /** At most this many pictures in a celebration row. */
@@ -25,23 +27,28 @@ function Parade({ ids }: { ids: readonly number[] }) {
 
 /** Proven: one Ethereum tx mints every ready kid. */
 export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Trip[] }) {
-  const { ethWallet, ethWriter } = useBridge()
+  const { deployment, ethWallet, ethWriter } = useBridge()
   const { update } = useFlow()
   const toast = useToast()
   const claim = useClaimKids()
-  const ready = trips.filter((t) => sent.ids.includes(t.tokenId) && t.stage === 'ready').map((t) => t.tokenId)
-  const already = trips.filter((t) => sent.ids.includes(t.tokenId) && t.stage === 'home-eth').map((t) => t.tokenId)
+  useTitle('Ready to claim')
+  // in the order they were sent, like the pictures and the headings
+  const stageOf = new Map(trips.map((t) => [t.tokenId, t.stage]))
+  const ready = sent.ids.filter((id) => stageOf.get(id) === 'ready')
+  const already = sent.ids.filter((id) => stageOf.get(id) === 'home-eth')
   const n = ready.length
+  const estimate = useClaimEstimate(ready)
   const pending = claim.status === 'pending'
   // null only for the moment before the writer reports its first stage
   const stage = pending ? (claim.stage ?? 'signing') : null
 
   const onClaim = async () => {
+    // aria-disabled while pending keeps focus on the button, so the click is refused here
     if (pending || n === 0) return
     try {
       const result = await claim.run(ready)
       update({ claimTx: result.txHash })
-      toast({ tone: 'ok', title: `Claimed ${kidList(ready)}`, body: 'Minted on Ethereum.' })
+      toast(claimedToast(ready, result.txHash, deployment.explorer))
     } catch {
       // claim.error has it
     }
@@ -54,8 +61,9 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
         {sent.ids.length === 1 ? 'It made it across!' : 'They made it across!'}
       </h2>
       <p className="lede center">
-        The proof landed on Ethereum. Claim to mint {n === 1 ? (sent.ids.length === 1 ? 'your kid' : kidList(ready)) : `all ${n} kids`}{' '}
-        to <span className="mono">{shortAddress(sent.recipient)}</span>.
+        The proof landed on Ethereum. Claim to mint{' '}
+        {n === 1 ? (sent.ids.length === 1 ? 'your kid' : kidList(ready)) : n === 2 ? 'both kids' : `all ${n} kids`} to{' '}
+        <span className="mono">{shortAddress(sent.recipient)}</span>.
       </p>
       {already.length > 0 && (
         <p className="hint center">
@@ -71,11 +79,23 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
         ) : ethWallet.wrongChain ? (
           <SwitchChain />
         ) : (
-          <button type="button" className="btn eth" disabled={pending || n === 0} onClick={() => void onClaim()}>
+          <button
+            type="button"
+            className="btn eth"
+            disabled={!pending && n === 0}
+            aria-disabled={pending || undefined}
+            onClick={() => void onClaim()}
+          >
             {stage ? claimingLabel(stage, ethWallet.walletName) : `Claim ${n} ${kidWord(n)}`}
           </button>
         )}
       </div>
+      {!stage && n > 0 && estimate.data && (
+        <p className="hint center">
+          ≈ {formatEth(estimate.data.fee)} network fee.
+          {/* COPY: claim fee estimate */}
+        </p>
+      )}
       {stage && (
         <p className="hint center" role="status">
           {claimingHint(stage, ethWallet.walletName)}
@@ -88,7 +108,7 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
         </>
       )}
       <p className="hint center">
-        One Ethereum transaction claims {n === 1 ? 'it' : 'them all'}. Anyone can claim; it always goes to{' '}
+        One Ethereum transaction claims {n === 1 ? 'it' : n === 2 ? 'both' : 'them all'}. Anyone can claim; it always goes to{' '}
         <span className="mono">{shortAddress(sent.recipient)}</span>.
         {/* COPY: claim hint */}
       </p>
@@ -100,6 +120,7 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
 export function DoneStep({ sent, claimTx }: { sent: SentTrip; claimTx: string | null }) {
   const { deployment } = useBridge()
   const { restart } = useFlow()
+  useTitle('Welcome to Ethereum')
   const { explorer } = deployment
   const n = sent.ids.length
   const first = sent.ids[0]
@@ -120,9 +141,9 @@ export function DoneStep({ sent, claimTx }: { sent: SentTrip; claimTx: string | 
       </p>
       <div className="row center">
         {etherscan && (
-          <a className="btn ghost" href={etherscan} target="_blank" rel="noopener">
-            View on Etherscan ↗
-          </a>
+          <ExtLink className="btn ghost" href={etherscan}>
+            View on Etherscan
+          </ExtLink>
         )}
         <button type="button" className="btn" onClick={restart}>
           Bridge another
@@ -134,9 +155,7 @@ export function DoneStep({ sent, claimTx }: { sent: SentTrip; claimTx: string | 
           {opensea.map((o, i) => (
             <span key={o.id}>
               {i > 0 && ' · '}
-              <a href={o.url} target="_blank" rel="noopener">
-                #{o.id} ↗
-              </a>
+              <ExtLink href={o.url}>#{o.id}</ExtLink>
             </span>
           ))}
         </p>

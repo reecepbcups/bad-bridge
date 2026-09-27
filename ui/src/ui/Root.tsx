@@ -4,6 +4,7 @@ import { Shell } from './chrome/Shell'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useFocusHeadingOnChange } from './hooks'
 import { ToastProvider } from './Toasts'
+import { useTitle } from './useTitle'
 import { AboutView } from './views/AboutView'
 import { BridgeView } from './views/bridge/BridgeView'
 import { FlowProvider } from './views/bridge/flow'
@@ -45,6 +46,7 @@ function RouteView({ route }: { route: Route }) {
 }
 
 function ViewCrashed({ error, reset }: { error: Error; reset: () => void }) {
+  useTitle('Oops')
   return (
     <Card>
       <h2 tabIndex={-1}>Oops, this page tripped</h2>

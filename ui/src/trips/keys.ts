@@ -4,7 +4,8 @@ import type { DeploymentId } from '../config/deployments'
 // react-query keys and timings for src/trips. Everything lives under ['bridge', deployment].
 //
 // Two layers:
-// - Hook queries ('trips', 'trip', 'owned', 'health', 'sanity', 'estimate'): what the hooks return. They poll.
+// - Hook queries ('trips', 'trip', 'owned', 'health', 'sanity', 'estimate', 'claim-estimate', 'trust'): what the
+//   hooks return. Most of them poll.
 // - Raw reads ('read', …): one chain read each, fetched through queryClient.query() from inside the hook
 //   queries. They never poll on their own; their staleTime decides whether a hook refresh re-reads them, so
 //   hooks share them (one eth.client() for every hook on the page) and immutable facts are read once.
@@ -53,6 +54,8 @@ export const keys = {
   sanity: (d: DeploymentId) => [...root(d), 'sanity'] as const,
   estimate: (d: DeploymentId, sender: string | undefined, ids: string, recipient: string | null) =>
     [...root(d), 'estimate', sender, ids, recipient] as const,
+  claimEstimate: (d: DeploymentId, ids: string) => [...root(d), 'claim-estimate', ids] as const,
+  trust: (d: DeploymentId) => [...root(d), 'trust'] as const,
 
   // raw reads
   latest: (d: DeploymentId) => [...root(d), 'read', 'latest'] as const,

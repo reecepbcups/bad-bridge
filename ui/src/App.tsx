@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
-import { deployment } from './config/deployments'
+import { deployment, isDemo } from './config/deployments'
 import { Broken } from './ui/Broken'
+import { DemoBanner } from './ui/chrome/DemoBanner'
+import { LoadingShell } from './ui/chrome/LoadingShell'
 import { ErrorBoundary } from './ui/ErrorBoundary'
 import { Root } from './ui/Root'
 
@@ -20,8 +22,9 @@ export function App() {
   const BridgeProvider = deployment.demo ? DemoBridgeProvider : RealBridgeProvider
   return (
     <QueryClientProvider client={queryClient}>
+      {isDemo && <DemoBanner />}
       <ErrorBoundary fallback={(error) => <Broken error={error} deployment={deployment} />}>
-        <Suspense fallback={null}>
+        <Suspense fallback={<LoadingShell />}>
           <BridgeProvider deployment={deployment}>
             <Root />
           </BridgeProvider>

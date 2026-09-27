@@ -1,10 +1,11 @@
-import { createPublicClient, HttpRequestError } from 'viem'
+import { createPublicClient, getAddress, HttpRequestError, type Hex } from 'viem'
 import { mainnet } from 'viem/chains'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DEPLOYMENTS, type Deployment } from '../../config/deployments'
 import { BridgeError } from '../types'
-import { createEthReader, isContractCode } from './reader'
-import { ALICE, BOB, BRIDGE, ESCROW, FakeChain } from './testing/fakeChain'
+import { typicalClaimGas } from './gas'
+import { createEthReader, EIP1967_IMPLEMENTATION_SLOT, isContractCode } from './reader'
+import { ALICE, BOB, BRIDGE, ESCROW, FAKE_GAS, FakeChain, LIGHT_CLIENT, MULTICALL3, ROUTER } from './testing/fakeChain'
 
 const deployment = DEPLOYMENTS['reece-test']
 const notLive: Deployment = { ...deployment, eth: { ...deployment.eth, bridge: null } }
@@ -89,19 +90,66 @@ describe('bridgeEscrow', () => {
   })
 })
 
+describe('bridgeWiring', () => {
+  it('reads ROUTER(), clientId(), lightClient() and the client\'s chain id', async () => {
+    expect(await reader().bridgeWiring()).toEqual({ router: ROUTER, clientId: 'cosmoshub-0', lightClient: LIGHT_CLIENT, chainId: 'cosmoshub-4' })
+    chain.clientChainId = 'theta-testnet-001'
+    chain.clientId = 'cosmoshub-7'
+    chain.router = BOB
+    expect(await reader().bridgeWiring()).toEqual({ router: BOB, clientId: 'cosmoshub-7', lightClient: LIGHT_CLIENT, chainId: 'theta-testnet-001' })
+  })
+})
+
+describe('proxyImplementation', () => {
+  it('reads the EIP-1967 slot: an address when set, null when empty', async () => {
+    expect(await reader().proxyImplementation(ROUTER)).toBeNull()
+    chain.storage.set(ROUTER.toLowerCase(), new Map<string, Hex>([[EIP1967_IMPLEMENTATION_SLOT, `0x${'0'.repeat(24)}17fa3a98d0239a399927c7c3ccde142e08deb7b5`]]))
+    expect(await reader().proxyImplementation(ROUTER)).toBe(getAddress('0x17fa3a98d0239a399927c7c3ccde142e08deb7b5'))
+  })
+})
+
+describe('estimateClaim', () => {
+  it('simulates when every kid can be claimed: claim() for one, aggregate3 for several', async () => {
+    chain.proven.set(2, ALICE).set(3, BOB)
+    chain.gasPrice = 3_000_000_000n
+    expect(await reader().estimateClaim([2])).toEqual({ gas: Number(FAKE_GAS), gasPrice: '3000000000', fee: String(FAKE_GAS * 3_000_000_000n), simulated: true })
+    expect(chain.estimates.at(-1)?.to.toLowerCase()).toBe(BRIDGE.toLowerCase())
+    expect(await reader().estimateClaim([2, 3, 2])).toMatchObject({ gas: Number(FAKE_GAS), simulated: true })
+    expect(chain.estimates.at(-1)?.to.toLowerCase()).toBe(MULTICALL3.toLowerCase())
+  })
+
+  it('falls back to typical gas when a kid can\'t be claimed now, and prices one kid for an empty list', async () => {
+    chain.proven.set(2, ALICE)
+    chain.gasPrice = 1_000_000_000n
+    // #1 isn't proven, so the strict batch reverts
+    expect(await reader().estimateClaim([1, 2])).toEqual({ gas: 109_000, gasPrice: '1000000000', fee: '109000000000000', simulated: false })
+    const before = chain.estimates.length
+    expect(await reader().estimateClaim([])).toEqual({ gas: 79_000, gasPrice: '1000000000', fee: '79000000000000', simulated: false })
+    expect(chain.estimates).toHaveLength(before)
+  })
+
+  it('typical gas: 79k for one kid, 30k per extra', () => {
+    expect(typicalClaimGas(1)).toBe(79_000n)
+    expect(typicalClaimGas(2)).toBe(109_000n)
+    expect(typicalClaimGas(50)).toBe(1_549_000n)
+  })
+})
+
 describe('failures', () => {
   it('throws NotLive for every bridge read when there is no bridge', async () => {
     const r = reader(notLive)
     await expect(r.client()).rejects.toMatchObject({ code: 'NotLive' })
     await expect(r.kidStatus([1])).rejects.toMatchObject({ code: 'NotLive' })
     await expect(r.bridgeEscrow()).rejects.toMatchObject({ code: 'NotLive' })
+    await expect(r.bridgeWiring()).rejects.toMatchObject({ code: 'NotLive' })
+    await expect(r.estimateClaim([1])).rejects.toMatchObject({ code: 'NotLive' })
     expect(chain.publicLog).toEqual([])
   })
 
   it('maps transport failures to Network', async () => {
     chain.publicError = new HttpRequestError({ url: 'https://rpc.example', status: 503, body: {} })
     const r = reader()
-    for (const p of [r.client(), r.kidStatus([1]), r.isContract(ALICE), r.bridgeEscrow()]) {
+    for (const p of [r.client(), r.kidStatus([1]), r.isContract(ALICE), r.bridgeEscrow(), r.bridgeWiring(), r.proxyImplementation(ROUTER), r.estimateClaim([1])]) {
       const err = await p.catch((e: unknown) => e)
       expect(err).toBeInstanceOf(BridgeError)
       expect(err).toMatchObject({ code: 'Network' })

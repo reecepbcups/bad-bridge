@@ -1,6 +1,7 @@
 import type { Stage, Trip } from '../trips/types'
 
 // Copy and progress numbers for each trip stage. The stage itself always comes from chain (trips/derive.ts).
+// Every place a trip's progress shows uses one four-step journey: Sent → Ethereum caught up → Proven → Claimed.
 
 /** Pill class and text for list rows. */
 export const STAGE_PILL: Readonly<Record<Stage, { className: string; label: string }>> = {
@@ -13,13 +14,18 @@ export const STAGE_PILL: Readonly<Record<Stage, { className: string; label: stri
   'home-eth': { className: 'pill home', label: 'home on Ethereum' },
 }
 
-/** One line on where the kid is, from the mockup's stage list. */
+// COPY: journey steps and stage lines
+/** The four steps, as the stage list titles them. The track bar uses the same words, shortened only at the end. */
+export const JOURNEY = ['Sent', 'Ethereum caught up', 'Proven', 'Claimed on Ethereum'] as const
+export const TRACK_LABELS = ['Sent', 'Ethereum caught up', 'Proven', 'Claimed'] as const
+
+/** One line on where the kid is, in the journey's words: list rows, the crossing scene, the crossing screen's status. */
 export const STAGE_LINE: Readonly<Record<Stage, string>> = {
   'home-hub': 'Still on the Hub',
-  locked: 'Locked in the Hub escrow',
-  'catching-up': 'Ethereum catches up to the Hub',
-  proving: 'Making the proof',
+  locked: 'Sent, in the Hub escrow',
+  'catching-up': 'Waiting for Ethereum to catch up',
   crossing: 'On the bridge',
+  proving: 'Ethereum caught up, now being proven',
   ready: 'Proven, ready to claim',
   'home-eth': 'Home on Ethereum',
 }
@@ -47,8 +53,11 @@ export function slowestStage(trips: readonly Trip[]): Stage | null {
   return slowest
 }
 
-/** The tracker's four segments: Sent, Seen, Proven, Claimed. Segments before this are done; this one is current. */
-export const TRACK_AT: Readonly<Record<Stage, number>> = {
+/**
+ * The journey step a stage is on, for the stage list and the track bar alike: steps before it are done, it's the
+ * current one, and 4 means all four are done. `crossing` (send height unknown) is somewhere in steps 1–2.
+ */
+export const JOURNEY_AT: Readonly<Record<Stage, number>> = {
   'home-hub': 0,
   locked: 1,
   'catching-up': 1,
@@ -58,15 +67,7 @@ export const TRACK_AT: Readonly<Record<Stage, number>> = {
   'home-eth': 4,
 }
 
-export const TRACK_LABELS = ['Sent', 'Seen', 'Proven', 'Claimed'] as const
-
-/** The crossing stage list. Items before this index are done, this one is now. 4 means every item is done. */
-export const LIST_AT: Readonly<Record<Stage, number>> = {
-  'home-hub': 0,
-  locked: 1,
-  'catching-up': 1,
-  crossing: 1,
-  proving: 2,
-  ready: 4,
-  'home-eth': 4,
+/** "Waiting for Ethereum…" → "waiting for Ethereum…", for a stage line mid-sentence. */
+export function lowerFirst(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1)
 }

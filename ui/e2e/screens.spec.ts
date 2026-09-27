@@ -31,7 +31,7 @@ const BRIDGE_WALK: Stop[] = [
   [
     'connect-sheet',
     async (page) => {
-      await page.getByRole('button', { name: 'connect Ethereum' }).click()
+      await page.getByRole('button', { name: 'Connect Ethereum' }).click()
       await expect(page.getByRole('dialog', { name: 'Connect Ethereum' })).toBeVisible()
     },
   ],
@@ -71,6 +71,8 @@ const BRIDGE_WALK: Stop[] = [
     'review-rejected',
     async (page) => {
       await page.getByLabel('Ethereum address').fill('0x8f3a41b7e2D09C6A5E1f7b3C2d9A0e4f6b8Cc21d')
+      // a new recipient un-ticks "Got it", so it's agreed for this address
+      await page.getByLabel('Got it, one way only').check()
       await expect(sendButton(page)).toBeEnabled()
       await page.evaluate(() => window.badBridgeDemo?.setFailNext('UserRejected'))
       await sendButton(page).click()
@@ -89,7 +91,7 @@ const BRIDGE_WALK: Stop[] = [
     'crossing-proving',
     async (page) => {
       await skipAhead(page)
-      await expect(page.getByRole('img', { name: /making the proof/ })).toBeVisible()
+      await expect(page.getByRole('img', { name: /now being proven/ })).toBeVisible()
       // let the walkers finish walking
       await page.waitForTimeout(2800)
     },
@@ -148,7 +150,7 @@ const OTHER_STOPS: Stop[] = [
       await demoReady(page)
       await page.evaluate(() => window.badBridgeDemo?.setFrozen(true))
       await pickAndReview(page, [663])
-      await expect(page.getByText('The bridge is paused, so sending is off.')).toBeVisible()
+      await expect(page.getByText('The bridge is stuck for now, so sending is off.')).toBeVisible()
     },
   ],
   [

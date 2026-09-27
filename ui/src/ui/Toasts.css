@@ -1,4 +1,4 @@
-/* bottom-of-screen notices for tx results */
+/* bottom-of-screen notices for tx results; top on phones, where the bottom is where the links are */
 .toasts {
   position: fixed; inset-inline: 0; bottom: 16px; z-index: 20;
   display: grid; justify-items: center; gap: 8px; padding-inline: 16px; pointer-events: none;
@@ -17,5 +17,9 @@
 .toast a { overflow-wrap: anywhere; }
 .toast .x {
   flex: none; font: 700 22px/1 var(--display); color: var(--ink-soft); background: none; border: 0;
-  cursor: pointer; padding: 2px 6px; min-width: 32px; min-height: 32px;
+  cursor: pointer; padding: 2px 6px; min-width: 44px; min-height: 44px; margin: -8px -8px -8px 0;
+}
+
+@media (max-width: 520px) {
+  .toasts { top: 10px; bottom: auto; }
 }

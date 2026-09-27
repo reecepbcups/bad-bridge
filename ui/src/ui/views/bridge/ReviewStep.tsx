@@ -1,25 +1,34 @@
 import { useId, useState } from 'react'
 import { useBridge } from '../../../chain/context'
+import { recipientMsg } from '../../../chain/encode-recipient'
 import { checkRecipient, type RecipientCheck } from '../../../chain/eth/recipient'
-import type { EthAddress, KidId, SendStage } from '../../../chain/types'
+import { MAX_KIDS_PER_SEND, type EthAddress, type KidId, type SendStage } from '../../../chain/types'
+import { sharedHost } from '../../../config/host'
 import { useConfigSanity, useHealth, useSendEstimate, useSendKids } from '../../../trips/hooks'
 import { ConnectButton } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
 import { errorCopy } from '../../errors'
-import { formatFee, kidWord, shortAddress } from '../../format'
+import { formatFee, kidWord } from '../../format'
 import { useIsContract } from '../../hooks'
 import { KidArt } from '../../KidArt'
 import { useToast } from '../../Toasts'
+import { useTitle } from '../../useTitle'
 import { useFlow } from './flow'
+import './review.css'
 
 // COPY: recipient validation lines
 const BAD_ADDRESS: Readonly<Record<Exclude<RecipientCheck, { ok: true }>['reason'], string>> = {
   format: "That doesn't look like an Ethereum address (0x + 40 characters).",
   zero: "That's the zero address. Kids sent there are gone forever.",
   checksum: "The capital letters don't match this address's checksum, so there may be a typo. Copy it again from your wallet.",
+  burn: "That's a burn or system address, not a wallet. Kids sent there are gone forever.",
 }
 
 const CHECKING_SEND = 'Checking the send with the Hub…'
+
+// COPY: shared-host guard
+const SHARED_HOST =
+  "Sending is off on this web address: it's shared with other sites, and any of them could tamper with this page. Open the bridge from its own address instead."
 
 // COPY: send progress (button labels and the line under them)
 /** The Send button while a send runs, from the Hub writer's progress. */
@@ -36,29 +45,43 @@ const SEND_HINT: Readonly<Record<SendStage, (wallet: string) => string>> = {
   broadcasting: () => 'Signed. Waiting for the Hub to put it in a block…',
 }
 
+/** "0x8f3a 41b7 e2D0 …": the whole checksummed address in groups of four, easy to compare by eye. */
+export function chunkAddress(address: string): string {
+  return `0x${(address.slice(2).match(/.{1,4}/g) ?? []).join(' ')}`
+}
+
 export function ReviewStep() {
   const { deployment, hubWallet, ethWallet, hubWriter } = useBridge()
   const { flow, update } = useFlow()
   const toast = useToast()
   const ids = flow.picked
   const n = ids.length
+  useTitle('Review and send')
 
-  // recipient: follows the connected Ethereum wallet until the user types
+  // recipient: follows the connected Ethereum wallet until the user types, unless that wallet is on another
+  // network (a smart-contract wallet there may not exist at the same address on Ethereum)
   const connectedEth = ethWallet.status === 'connected' ? ethWallet.address : undefined
-  const input = flow.recipient ?? connectedEth ?? ''
-  const auto = flow.recipient === null && connectedEth !== undefined
+  const wrongChain = connectedEth !== undefined && ethWallet.wrongChain === true
+  const autoFill = wrongChain ? undefined : connectedEth
+  const input = flow.recipient ?? autoFill ?? ''
+  const auto = flow.recipient === null && autoFill !== undefined
   const check = input.trim() ? checkRecipient(input, connectedEth) : null
   const address: EthAddress | null = check?.ok ? check.address : null
 
   const contract = useIsContract(address)
   const [holdsFor, setHoldsFor] = useState<string | null>(null)
   const canHold = address !== null && holdsFor === address
-  const [agreed, setAgreed] = useState(false)
+  // "Got it" is for one address: a different valid address un-ticks it
+  const [agreedFor, setAgreedFor] = useState<{ address: EthAddress | null } | null>(null)
+  if (agreedFor !== null && address !== null && agreedFor.address !== address) setAgreedFor(null)
+  const agreed = agreedFor !== null
 
   const sanity = useConfigSanity()
   const health = useHealth()
   const estimate = useSendEstimate(ids, address)
-  const send = useSendKids()
+  // the furthest the last send got: only a signed send could have landed
+  const [reached, setReached] = useState<SendStage | null>(null)
+  const send = useSendKids({ onStage: setReached })
   const sending = send.status === 'pending'
   const walletName = hubWallet.walletName ?? 'your wallet'
   // null only for the moment before the writer reports its first stage
@@ -69,9 +92,12 @@ export function ReviewStep() {
   const whyId = useId()
 
   const reason = whyDisabled()
+  // COPY: why Send is off (new: shared host, the 100-kid cap, stale health, stuck)
   function whyDisabled(): string | null {
+    if (sharedHost(window.location)) return SHARED_HOST
     if (!hubWriter) return 'Connect your Cosmos Hub wallet first.'
     if (n === 0) return 'Pick at least one kid.'
+    if (n > MAX_KIDS_PER_SEND) return `Send up to ${MAX_KIDS_PER_SEND} at a time. Take some out and send the rest after.`
     const s = sanity.data
     if (!s) return sanity.error ? "Couldn't double-check the bridge contracts, so sending is off for now." : 'Double-checking the bridge contracts…'
     if (s.status === 'not-live' || s.problems.some((p) => p.code === 'NotLive')) return "The bridge isn't open yet."
@@ -82,7 +108,9 @@ export function ReviewStep() {
     }
     const h = health.data
     if (!h) return health.error ? "Can't reach Ethereum to check the bridge, so sending is off for now." : 'Checking the bridge…'
-    if (h.frozen) return 'The bridge is paused, so sending is off.'
+    // old numbers can't vouch for the light client: wait for a fresh read
+    if (health.error) return "Can't reach the chains to check the bridge right now, so sending is off until they answer."
+    if (h.frozen) return 'The bridge is stuck for now, so sending is off.'
     if (!check) return 'Add the Ethereum address your kids should land at.'
     if (!check.ok) return 'Fix the Ethereum address first.'
     if (contract.data === undefined) return contract.error ? "Couldn't check the address. Try again." : 'Checking the address…'
@@ -93,10 +121,11 @@ export function ReviewStep() {
     if (!estimate.data) return CHECKING_SEND
     return null
   }
-  const disabled = reason !== null || sending
 
   const onSend = async () => {
-    if (disabled || !address) return
+    // aria-disabled while sending keeps focus on the button, so the click has to be refused here
+    if (reason !== null || sending || !address) return
+    setReached(null)
     try {
       const result = await send.run(ids, address)
       update({ sent: { ids, recipient: address, txHash: result.txHash }, picked: [], claimTx: null })
@@ -108,6 +137,13 @@ export function ReviewStep() {
     } catch {
       // send.error has it
     }
+  }
+
+  const onAgree = (checked: boolean) => {
+    if (!checked) return setAgreedFor(null)
+    // freeze an auto-filled address, so switching accounts in the wallet can't change where the kids land
+    if (auto && address) update({ recipient: address })
+    setAgreedFor({ address })
   }
 
   const unpick = (id: KidId) => {
@@ -122,7 +158,8 @@ export function ReviewStep() {
 
   // checking → "Check Keplr…" → sending → the crossing screen
   const label = stage ? SEND_LABEL[stage](walletName) : reason === CHECKING_SEND ? 'Checking…' : `Send ${n} ${kidWord(n)}`
-  const mightHaveLanded = send.error !== null && !errorCopy(send.error, { action: 'send' }).safe
+  const mightHaveLanded = send.error !== null && reached === 'broadcasting' && !errorCopy(send.error, { action: 'send' }).safe
+  const msg = address ? recipientMsg(address) : null
 
   return (
     <>
@@ -150,6 +187,21 @@ export function ReviewStep() {
           aria-describedby={hintId}
         />
       </div>
+      {address && (
+        <div className="recipient-full">
+          <p className="chunks">
+            <span className="sr-only">Full address: {address}</span>
+            <span aria-hidden="true">{chunkAddress(address)}</span>
+          </p>
+          {msg && (
+            <p className="hint">
+              <b>Check your wallet:</b> it will show <span className="mono">msg: {msg}</span>
+              {n > 1 ? ' for each kid' : ''}. It should match.
+              {/* COPY: wallet msg check */}
+            </p>
+          )}
+        </div>
+      )}
       <RecipientHint id={hintId} check={check} auto={auto} connected={connectedEth} walletName={ethWallet.walletName} />
       {!connectedEth && (
         <div className="row start">
@@ -157,6 +209,23 @@ export function ReviewStep() {
             Connect Ethereum to fill it in
           </ConnectButton>
         </div>
+      )}
+
+      {wrongChain && flow.recipient === null && (
+        <>
+          <div className="warn">
+            <WarnIcon />
+            <div>
+              <b>Your wallet is on another network.</b>
+              Smart-contract wallets may not exist at the same address on Ethereum.
+              {/* COPY: wrong-network recipient warning */}
+            </div>
+          </div>
+          <label className="check">
+            <input type="checkbox" checked={false} onChange={(e) => e.target.checked && connectedEth && update({ recipient: connectedEth })} />{' '}
+            It's a regular wallet: use the same address on Ethereum
+          </label>
+        </>
       )}
 
       {address && contract.data && (
@@ -190,7 +259,7 @@ export function ReviewStep() {
         </div>
       </div>
       <label className="check">
-        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Got it, one way only
+        <input type="checkbox" checked={agreed} onChange={(e) => onAgree(e.target.checked)} /> Got it, one way only
       </label>
 
       {sanity.error && sanity.data?.ok !== true && (
@@ -227,7 +296,8 @@ export function ReviewStep() {
         <button
           type="button"
           className="btn"
-          disabled={disabled}
+          disabled={!sending && reason !== null}
+          aria-disabled={sending || undefined}
           aria-describedby={reason ? whyId : undefined}
           onClick={() => void onSend()}
         >
@@ -239,10 +309,10 @@ export function ReviewStep() {
           {reason}
         </p>
       ) : (
-        <p className="hint">
+        <p className="hint" role="status">
           {stage
             ? SEND_HINT[stage](walletName)
-            : `${walletName === 'your wallet' ? 'Your wallet' : walletName} asks you to sign once${n > 1 ? `, for all ${n} kids` : ''}.`}
+            : `${walletName === 'your wallet' ? 'Your wallet' : walletName} asks you to sign once${n === 2 ? ', for both kids' : n > 2 ? `, for all ${n} kids` : ''}.`}
           {estimate.data && !estimate.error && <> ≈ {formatFee(estimate.data)} network fee.</>}
         </p>
       )}
@@ -288,8 +358,7 @@ function RecipientHint({
   if (connected) {
     return (
       <p className="hint heads-up" id={id}>
-        <b>This isn't your connected wallet</b> ({shortAddress(connected)}). Make sure you control it: the kids get minted
-        here and can't come back.
+        <b>This isn't your connected wallet.</b> Make sure you control it: the kids get minted here and can't come back.
       </p>
     )
   }

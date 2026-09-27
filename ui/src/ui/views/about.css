@@ -13,6 +13,12 @@
 .trust li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 15px; }
 .trust li::before { content: "✓"; font: 700 22px/1 var(--display); color: var(--ok); }
 .trust b { font-weight: 800; }
+/* a caveat about this deployment (someone could change something), and a fact we couldn't read */
+.trust li.caveat::before { content: "!"; color: var(--crayon-ink); }
+.trust li.unknown::before { content: "?"; color: var(--ink-soft); }
+.trust li.unknown { color: var(--ink-soft); }
+.trust .mono { font-size: 13px; }
+.trust-note { font-size: 13px; margin: -4px 0 0; }
 .faq { display: grid; }
 .faq details { border-top: 2px dashed var(--line); padding-block: 10px; }
 .faq summary { cursor: pointer; font: 700 20px/1.2 var(--display); }

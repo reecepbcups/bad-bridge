@@ -75,6 +75,12 @@ export function dateTime(d: Date): string {
   return `${date}, ${time}`
 }
 
+/** "9:41 pm" today, "Sep 26, 9:41 pm" before that. */
+export function clockTime(d: Date, now: Date = new Date()): string {
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+  return d.toDateString() === now.toDateString() ? time : `${shortDate(d)}, ${time}`
+}
+
 /** "33,114,902". */
 export function blockNumber(n: number): string {
   return n.toLocaleString('en-US')

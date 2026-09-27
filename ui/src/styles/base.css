@@ -17,7 +17,7 @@ body {
 
 :focus-visible { outline: 3px dashed var(--crayon); outline-offset: 3px; }
 /* headings take focus on route and step changes so screen readers land there; they aren't controls, so no ring */
-h2[tabindex="-1"]:focus { outline: none; }
+h2[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 a { color: var(--eth-ink); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 
 .skip {
@@ -56,6 +56,7 @@ h2 { font: 700 34px/1 var(--display); margin: 0; text-wrap: balance; }
 .hint.center { max-width: 58ch; }
 .muted { color: var(--ink-soft); font-size: 14px; }
 .mono { font-family: var(--mono); font-size: 12.5px; }
+.nowrap { white-space: nowrap; }
 .note { font-size: 13.5px; color: var(--ink-soft); border-left: 3px solid var(--sun); padding-left: 10px; }
 
 /* buttons */
@@ -69,7 +70,7 @@ h2 { font: 700 34px/1 var(--display); margin: 0; text-wrap: balance; }
 .btn:active:not(:disabled) { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.ghost { background: none; color: var(--ink); box-shadow: none; font-size: 19px; }
-.btn.eth { background: var(--eth); color: var(--on-eth); }
+.btn.eth { background: var(--eth-ink); color: var(--on-eth); }
 .btn.small { font-size: 17px; padding: 7px 14px 8px; }
 a.btn { display: inline-block; text-decoration: none; }
 /* a quiet text button, for "try again" inside notes */
@@ -87,6 +88,7 @@ input[type="text"] {
   border: 2.5px solid var(--ink); border-radius: var(--wobble-2);
   padding: 12px 14px; width: 100%;
 }
+input::placeholder { color: var(--ink-soft); opacity: 1; }
 .hint { font: 600 13px/1.4 var(--body); color: var(--ink-soft); }
 .hint.bad { color: var(--crayon-ink); }
 .hint.heads-up { color: var(--ink); border-left: 3px solid var(--crayon); padding-left: 10px; }
@@ -162,19 +164,26 @@ svg.art.doodle { background: var(--paper); padding: 4%; }
 .stages li.done b { color: var(--ink); }
 .stages li.now { color: var(--ink); }
 .stages li.now .tick { background: var(--sun); color: var(--sun-ink); animation: wiggle .7s ease-in-out infinite alternate; }
+.stages .secondary { display: block; font-weight: 600; color: var(--ink-soft); }
 @keyframes wiggle { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+
+/* loading placeholders */
+.skeleton .art, .skeleton .bar { background: var(--line); animation: pulse 1.2s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: .45; } to { opacity: 1; } }
+.loading-card { min-height: 360px; }
 
 @media (max-width: 520px) {
   .card { padding: 20px 16px; }
   h2 { font-size: 29px; }
+  /* thumb-sized targets */
+  .linkish { min-height: 44px; display: inline-flex; align-items: center; }
+  button.btn { min-height: 44px; }
+  .oops summary { padding-block: 3px; }
 }
 
+/* last, so it wins over every animation above */
 @media (prefers-reduced-motion: reduce) {
   .stages li.now .tick { animation: none; }
   .btn { transition: none; }
   .skeleton .art, .skeleton .bar { animation: none; }
 }
-
-/* loading placeholders */
-.skeleton .art, .skeleton .bar { background: var(--line); animation: pulse 1.2s ease-in-out infinite alternate; }
-@keyframes pulse { from { opacity: .45; } to { opacity: 1; } }

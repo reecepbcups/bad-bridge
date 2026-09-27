@@ -6,6 +6,8 @@ import { bridgeAbi, lightClientAbi, multicall3WriteAbi } from './abi'
 // From `forge inspect BadBridge methodIdentifiers` and `forge inspect BadBridge errors` in eth/.
 const FORGE_FUNCTIONS: Record<string, string> = {
   'ESCROW()': '0xe681c4aa',
+  'ROUTER()': '0x32fe7b26',
+  'clientId()': '0x6bb3471a',
   'claim(uint32)': '0x04951891',
   'lightClient()': '0xb5700e68',
   'ownerOf(uint256)': '0x6352211e',

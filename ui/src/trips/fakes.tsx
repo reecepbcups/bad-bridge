@@ -8,8 +8,10 @@ import { vi } from 'vitest'
 import { BridgeContext, type BridgeContextValue } from '../chain/context'
 import {
   BridgeError,
+  type BridgeWiring,
   type ClaimOptions,
   type ClientStatus,
+  type ContractInfo,
   type EthAddress,
   type EthReader,
   type EthWriter,
@@ -56,6 +58,14 @@ export interface FakeChain {
   blockSeconds: number
   escrowCw721: string
   bridgeEscrow: Hex
+  /** What bridgeWiring() returns. Defaults to the deployment's own settings. */
+  wiring: BridgeWiring
+  /** contractInfo(): address → info. Missing addresses fail with Unknown. */
+  contracts: Map<HubAddress, ContractInfo>
+  /** proxyImplementation(): lowercase address → implementation. */
+  proxies: Map<string, EthAddress>
+  /** wei, for estimateClaim() */
+  gasPrice: bigint
   /** make a read fail: method name → error */
   fail: Partial<Record<keyof HubReader | keyof EthReader, BridgeError>>
 }
@@ -72,6 +82,10 @@ export function fakeChain(init: Partial<FakeChain> = {}): FakeChain {
     blockSeconds: 6,
     escrowCw721: LIVE.hub.cw721,
     bridgeEscrow: GOOD_ESCROW,
+    wiring: { router: LIVE.eth.router, clientId: LIVE.eth.clientId, lightClient: LIVE.eth.lightClient, chainId: LIVE.hub.chainId },
+    contracts: new Map(),
+    proxies: new Map(),
+    gasPrice: 1_000_000_000n,
     fail: {},
     ...init,
   }
@@ -123,6 +137,13 @@ export function fakeReaders(chain: FakeChain) {
     latestBlock: vi.fn(() => guard('latestBlock', () => ({ height: chain.hubHeight, time: timeAt(chain, chain.hubHeight) }))),
     block: vi.fn((height: number) => guard('block', () => ({ height, time: timeAt(chain, height) }))),
     escrowCw721: vi.fn(() => guard('escrowCw721', () => chain.escrowCw721)),
+    contractInfo: vi.fn((address: HubAddress) =>
+      guard('contractInfo', () => {
+        const info = chain.contracts.get(address)
+        if (!info) throw new BridgeError('Unknown', `fake: no contract ${address}`)
+        return { ...info }
+      }),
+    ),
   } satisfies HubReader
   const eth = {
     client: vi.fn(() => guard('client', () => ({ ...chain.client }))),
@@ -131,6 +152,16 @@ export function fakeReaders(chain: FakeChain) {
     ),
     isContract: vi.fn(() => Promise.resolve(false)),
     bridgeEscrow: vi.fn(() => guard('bridgeEscrow', () => chain.bridgeEscrow)),
+    bridgeWiring: vi.fn(() => guard('bridgeWiring', () => ({ ...chain.wiring }))),
+    proxyImplementation: vi.fn((address: EthAddress) => guard('proxyImplementation', () => chain.proxies.get(address.toLowerCase()) ?? null)),
+    estimateClaim: vi.fn((ids: readonly KidId[]) =>
+      guard('estimateClaim', () => {
+        const n = Math.max(1, new Set(ids).size)
+        const gas = 79_000n + 30_000n * BigInt(n - 1)
+        const claimable = ids.length > 0 && ids.every((id) => chain.proven.has(id) && !chain.owners.has(id))
+        return { gas: Number(gas), gasPrice: chain.gasPrice.toString(), fee: (gas * chain.gasPrice).toString(), simulated: claimable }
+      }),
+    ),
   } satisfies EthReader
   return { hub, eth }
 }

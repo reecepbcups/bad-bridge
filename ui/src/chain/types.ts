@@ -5,6 +5,11 @@ import type { Address, Hex } from 'viem'
 
 /** A kid's token id. The same number on both chains: a u32, canonical decimal on the Hub. */
 export type KidId = number
+/**
+ * Most kids one Hub send may carry. Each send_nft costs ~312k gas with headroom and the Hub's block gas limit is
+ * 75M, so 100 leaves plenty of room. The Hub writer refuses more with TooManyKids.
+ */
+export const MAX_KIDS_PER_SEND = 100
 /** 0x Ethereum address. Adapters return it checksummed. */
 export type EthAddress = Address
 /** bech32 Cosmos Hub account address (cosmos1…). */
@@ -58,6 +63,38 @@ export interface KidEthStatus {
   owner: EthAddress | null
 }
 
+/** A CosmWasm contract's on-chain metadata (`contract_info`). */
+export interface ContractInfo {
+  /** Code id it runs. */
+  codeId: number
+  /** Who can migrate (upgrade) it. null when nobody can. */
+  admin: HubAddress | null
+}
+
+/** How BadBridge reaches IBC Eureka's light client of the Hub, read live, for the startup sanity check. */
+export interface BridgeWiring {
+  /** bridge.ROUTER(): the Eureka router it asks for its client. */
+  router: EthAddress
+  /** bridge.clientId(): the Eureka client id it asks the router for. */
+  clientId: string
+  /** bridge.lightClient(): what the router hands back for that id today. */
+  lightClient: EthAddress
+  /** clientState().chainId of that light client: the chain it follows. */
+  chainId: string
+}
+
+/** What a claim would cost right now. Amounts in wei, as integer strings. */
+export interface ClaimEstimate {
+  /** Gas it should use: simulated when every kid can be claimed now, else typical mainnet figures. */
+  gas: number
+  /** The network's current gas price. */
+  gasPrice: string
+  /** gas × gasPrice. */
+  fee: string
+  /** True when `gas` came from simulating these exact kids. */
+  simulated: boolean
+}
+
 /** Result of simulating a send. */
 export interface SendEstimate {
   /** Gas limit the tx will use, safety margin included. */
@@ -100,6 +137,8 @@ export interface HubReader {
   block(height: number): Promise<HubBlock>
   /** The cw721 the escrow accepts (escrow `config {}`), for the startup sanity check. */
   escrowCw721(): Promise<HubAddress>
+  /** A contract's code id and admin, for the trust facts on About. */
+  contractInfo(address: HubAddress): Promise<ContractInfo>
 }
 
 /** Read-only Ethereum queries (viem, batched through Multicall3 in the real adapter). */
@@ -112,6 +151,15 @@ export interface EthReader {
   isContract(address: EthAddress): Promise<boolean>
   /** bridge.ESCROW(): the raw 32-byte escrow address as 0x hex, for the startup sanity check. */
   bridgeEscrow(): Promise<Hex>
+  /** bridge.ROUTER(), bridge.clientId(), bridge.lightClient() and that client's chain id, for the startup sanity check. */
+  bridgeWiring(): Promise<BridgeWiring>
+  /** The EIP-1967 implementation behind `address`, or null if the slot is empty (not an upgradeable proxy). */
+  proxyImplementation(address: EthAddress): Promise<EthAddress | null>
+  /**
+   * What claiming `ids` would cost now. Simulated when every kid is proven and unminted; otherwise typical
+   * mainnet gas for that many kids. An empty list prices one typical kid without simulating.
+   */
+  estimateClaim(ids: readonly KidId[]): Promise<ClaimEstimate>
 }
 
 /**
@@ -200,6 +248,12 @@ export type BridgeErrorCode =
   | 'AlreadyBridged'
   /** cw721: the sending wallet doesn't own this kid (moved since the list loaded, or no such token) */
   | 'NotOwner'
+  /** send: more than MAX_KIDS_PER_SEND kids in one tx */
+  | 'TooManyKids'
+  /** send: the simulated gas or the fee is far above what a send costs, so a Hub endpoint is likely lying */
+  | 'FeeTooHigh'
+  /** send: Ethereum's light client of the Hub is frozen, so nothing new can be proven */
+  | 'ClientFrozen'
   /** bridge: claim before the proof landed */
   | 'NotProven'
   /** wallet: the user declined */

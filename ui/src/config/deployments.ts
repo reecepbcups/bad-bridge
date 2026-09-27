@@ -34,8 +34,12 @@ export interface EthConfig {
   bridge: Address | null
   /** Multicall3, for batched reads and claim-many. */
   multicall3: Address
-  /** Eureka's cosmoshub-0 light client today. Display only: the bridge resolves it through the router live. */
+  /** Eureka's cosmoshub-0 light client today. The bridge resolves it through the router live; the startup check compares. */
   lightClient: Address
+  /** The IBC Eureka router BadBridge asks for its client (bridge.ROUTER()). Pinned; the startup check compares. */
+  router: Address
+  /** The Eureka client id BadBridge asks the router for (bridge.clientId()). */
+  clientId: string
 }
 
 /** Link builders. Every link the app shows goes through one of these. */
@@ -55,6 +59,8 @@ export interface Deployment {
   id: DeploymentId
   /** Shown in copy, e.g. "Bad Kids". */
   collectionName: string
+  /** Token ids run from 1 to collectionSize. */
+  collectionSize: number
   /** True for the in-memory demo adapter (no network at all). */
   demo: boolean
   hub: HubConfig
@@ -73,6 +79,9 @@ const HUB_RPC = [
 const ETH_RPC = ['https://ethereum-rpc.publicnode.com'] as const
 const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
 const EUREKA_CLIENT: Address = '0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9'
+/** IBC Eureka's ICS26 router on mainnet, read from the reece-test bridge's ROUTER() on 2026-09-27. */
+const EUREKA_ROUTER: Address = '0x3aF134307D5Ee90faa2ba9Cdba14ba66414CF1A7'
+const EUREKA_CLIENT_ID = 'cosmoshub-0'
 
 function explorers(bridge: Address | null): Explorers {
   return {
@@ -101,7 +110,15 @@ function hub(cw721: string, escrow: string | null): HubConfig {
 }
 
 function eth(bridge: Address | null): EthConfig {
-  return { chainId: 1, rpc: ETH_RPC, bridge, multicall3: MULTICALL3, lightClient: EUREKA_CLIENT }
+  return {
+    chainId: 1,
+    rpc: ETH_RPC,
+    bridge,
+    multicall3: MULTICALL3,
+    lightClient: EUREKA_CLIENT,
+    router: EUREKA_ROUTER,
+    clientId: EUREKA_CLIENT_ID,
+  }
 }
 
 const SOURCE = 'https://github.com/reecepbcups/bad-bridge'
@@ -112,6 +129,7 @@ const REECE_TEST_BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
 const reeceTest: Deployment = {
   id: 'reece-test',
   collectionName: 'ReeceBadTest',
+  collectionSize: 3,
   demo: false,
   hub: hub(
     'cosmos158d2rz0aw8cxx86j0tl8gfwleqyqefr9xdgth2jdfse2d9uumltsu83rfr',
@@ -126,6 +144,7 @@ const reeceTest: Deployment = {
 const badkids: Deployment = {
   id: 'badkids',
   collectionName: 'Bad Kids',
+  collectionSize: 9999,
   demo: false,
   hub: hub('cosmos12gsv9tmjhhg86wg9fnd9cnju28jx3fxva9cn8dh9meketkfxxajqmg3exz', null),
   eth: eth(null),
@@ -138,6 +157,7 @@ const demo: Deployment = {
   ...reeceTest,
   id: 'demo',
   collectionName: 'Bad Kids',
+  collectionSize: 9999,
   demo: true,
 }
 
@@ -152,9 +172,12 @@ export function isLive(d: Deployment): boolean {
   return d.hub.escrow !== null && d.eth.bridge !== null
 }
 
-/** `?demo` in the query string always wins, so any build can be demoed. */
-export function selectDeployment(envId: string | undefined, search: string): Deployment {
-  if (new URLSearchParams(search).has('demo')) return demo
+/**
+ * `?demo` switches to the demo when `allowDemo` is on: always in dev, and in production builds only with
+ * VITE_ALLOW_DEMO=1 (the e2e build). Elsewhere it's ignored, so nobody can pass a link that shows fake chain data.
+ */
+export function selectDeployment(envId: string | undefined, search: string, allowDemo = true): Deployment {
+  if (allowDemo && new URLSearchParams(search).has('demo')) return demo
   const id = envId?.trim() || 'reece-test'
   if (!(id in DEPLOYMENTS)) {
     throw new Error(`VITE_DEPLOYMENT="${id}" is not one of ${Object.keys(DEPLOYMENTS).join(', ')}`)
@@ -162,11 +185,18 @@ export function selectDeployment(envId: string | undefined, search: string): Dep
   return DEPLOYMENTS[id as DeploymentId]
 }
 
+/** Whether `?demo` is honoured by this build. */
+export const demoAllowed: boolean = import.meta.env.DEV || import.meta.env.VITE_ALLOW_DEMO === '1'
+
 /** The deployment this page runs, fixed at load. */
 export const deployment: Deployment = selectDeployment(
   import.meta.env.VITE_DEPLOYMENT,
   typeof location === 'undefined' ? '' : location.search,
+  demoAllowed,
 )
+
+/** The page runs the in-memory demo, not real chain data. Drives the full-width "DEMO" banner. */
+export const isDemo: boolean = deployment.demo
 
 /** Reown (WalletConnect) project id. Without it, only injected wallets are offered. */
 export const wcProjectId: string | undefined = import.meta.env.VITE_WC_PROJECT_ID?.trim() || undefined

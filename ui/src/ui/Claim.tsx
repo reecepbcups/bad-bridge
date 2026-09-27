@@ -1,10 +1,30 @@
 import { useState } from 'react'
 import { useBridge } from '../chain/context'
 import type { BridgeError, ClaimStage, KidId } from '../chain/types'
+import type { Explorers } from '../config/deployments'
 import { useClaimKids } from '../trips/hooks'
 import { ConnectButton } from './Connect'
 import { kidList } from './format'
-import { useToast } from './Toasts'
+import { useToast, type Toast } from './Toasts'
+
+/** The toast after any claim, the same everywhere. Kids are listed in the order given. */
+export function claimedToast(ids: readonly KidId[], txHash: string, explorer: Explorers): Toast {
+  return {
+    tone: 'ok',
+    title: `Claimed ${ids.length > 3 ? `${ids.length} kids` : kidList(ids)}`,
+    body: 'Minted on Ethereum. Welcome home.',
+    link: { href: explorer.ethTx(txHash), label: 'See it on Etherscan' },
+  }
+}
+
+/** "0.00016 ETH": a wei amount to two significant figures. */
+export function formatEth(wei: string): string {
+  const value = Number(wei) / 1e18
+  if (!/^\d+$/.test(wei) || !Number.isFinite(value)) return `${wei} wei`
+  if (value === 0) return '0 ETH'
+  if (value < 0.000001) return '< 0.000001 ETH'
+  return `${Number(value.toPrecision(2))} ETH`
+}
 
 /** One claim mutation shared by a list of rows, remembering which kids the current or last claim was for. */
 export interface ClaimFlow {
@@ -29,12 +49,7 @@ export function useClaimFlow(): ClaimFlow {
     setFailure(null)
     try {
       const result = await claim.run(ids)
-      toast({
-        tone: 'ok',
-        title: `Claimed ${ids.length > 3 ? `${ids.length} kids` : kidList(ids)}`,
-        body: 'Minted on Ethereum. Welcome home.',
-        link: { href: deployment.explorer.ethTx(result.txHash), label: 'See it on Etherscan' },
-      })
+      toast(claimedToast(ids, result.txHash, deployment.explorer))
     } catch (e) {
       setFailure({ error: e as BridgeError, ids })
     } finally {
@@ -67,12 +82,16 @@ export function ClaimButton({ ids, flow, children }: { ids: readonly KidId[]; fl
     )
   }
   const mine = ids.some((id) => flow.claiming.includes(id))
+  // aria-disabled while a claim runs, so focus stays on the button; the click is refused here instead
   return (
     <button
       type="button"
       className="btn eth"
-      disabled={flow.pending || ethWallet.wrongChain === true}
-      onClick={() => void flow.run(ids)}
+      disabled={ethWallet.wrongChain === true}
+      aria-disabled={flow.pending || undefined}
+      onClick={() => {
+        if (!flow.pending) void flow.run(ids)
+      }}
     >
       {mine && flow.stage ? claimingLabel(flow.stage, ethWallet.walletName) : children}
     </button>

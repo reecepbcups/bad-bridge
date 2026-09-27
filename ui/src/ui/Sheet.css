@@ -5,6 +5,11 @@
   border: 2.5px solid var(--ink); border-radius: var(--wobble); box-shadow: 4px 5px 0 var(--ink);
 }
 .sheet::backdrop { background: rgb(38 34 30 / .35); }
+/* the chalkboard paper is already dark: dim harder so the sheet stands out */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sheet::backdrop { background: rgb(0 0 0 / .6); }
+}
+:root[data-theme="dark"] .sheet::backdrop { background: rgb(0 0 0 / .6); }
 .sheet-body { display: grid; gap: 16px; padding: 22px 20px 20px; }
 .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .sheet-title { font: 700 30px/1 var(--display); margin: 0; }
@@ -34,10 +39,19 @@
 .wallet-opt .btn { font-size: 18px; padding: 7px 14px 8px; box-shadow: 2px 2px 0 var(--ink); }
 .wallet-opt a.get { font-weight: 800; font-size: 14px; white-space: nowrap; }
 .wallet-me { display: grid; gap: 6px; }
+
+/* no extension: phone users are pointed at their wallet app's browser */
+.phone-hint { display: grid; gap: 8px; font-size: 14.5px; border-left: 3px solid var(--sun); padding-left: 12px; }
+.phone-hint p { margin: 0; }
+.phone-hint b { font-weight: 800; }
+.wallet-choose { display: grid; gap: 14px; }
 .wallet-me .mono { overflow-wrap: anywhere; font-size: 13px; }
 
 @media (max-width: 520px) {
   .sheet-body { padding: 18px 14px 16px; }
+  /* flex drops the space before the arrow, so the gap puts it back */
+  .wallet-opt a.get { min-height: 44px; display: inline-flex; align-items: center; gap: .25em; }
+  .sheet .x { min-width: 44px; min-height: 44px; }
   .wallet-opt { padding: 8px 10px; gap: 8px; }
   .wallet-opt .name { font-size: 19px; }
   .wallet-opt .btn { font-size: 17px; padding: 6px 12px 7px; }

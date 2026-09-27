@@ -81,6 +81,8 @@ export function createWagmiConfig(deployment: Deployment, options: WagmiConfigOp
         walletConnect({
           projectId,
           showQrModal: true,
+          // no WalletConnect analytics
+          telemetryEnabled: false,
           metadata: { name: APP_NAME, description: `Move ${deployment.collectionName} from the Cosmos Hub to Ethereum`, url: origin, icons: [] },
         }),
       ),

@@ -24,10 +24,11 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    // the default build, pinned so a .env.local can't swap the deployment under the test
+    // the reece-test build, pinned so a .env.local can't swap the deployment under the test. No VITE_ALLOW_DEMO:
+    // this is the build users get, where ?demo is ignored.
     command: `pnpm build && pnpm exec vite preview --port ${PORT} --strictPort`,
     cwd: UI,
-    env: { VITE_DEPLOYMENT: 'reece-test' },
+    env: { VITE_DEPLOYMENT: 'reece-test', VITE_ALLOW_DEMO: '' },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

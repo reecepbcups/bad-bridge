@@ -12,15 +12,23 @@ export type Lookup =
 // COPY: lookup error lines
 const HELP = 'Paste an Ethereum address (0x…), a Hub address (cosmos1…) or a kid number like #1234.'
 
-/** Parses an Ethereum address, a Hub address or "#1234". Same rules as the rest of the app, so no surprises later. */
-export function parseLookup(input: string, hubPrefix = 'cosmos'): Lookup {
+/** A token id the collection actually has: they run from 1 to its size. */
+export function isKidId(id: KidId, collectionSize: number): boolean {
+  return Number.isInteger(id) && id >= 1 && id <= collectionSize
+}
+
+/**
+ * Parses an Ethereum address, a Hub address or "#1234" (1 to `collectionSize`). Same rules as the rest of the app,
+ * so no surprises later.
+ */
+export function parseLookup(input: string, hubPrefix = 'cosmos', collectionSize = 0xffff_ffff): Lookup {
   const value = input.trim()
   if (!value) return { kind: 'bad', message: HELP }
 
   const id = /^#?\s*(\d+)$/.exec(value)?.[1]
   if (id !== undefined) {
     // canonical u32 decimal, like the escrow and the router
-    if (!/^(0|[1-9]\d{0,9})$/.test(id) || Number(id) > 0xffff_ffff) return { kind: 'bad', message: `There's no kid #${id}.` }
+    if (!/^(0|[1-9]\d{0,9})$/.test(id) || !isKidId(Number(id), collectionSize)) return { kind: 'bad', message: `There's no kid #${id}.` }
     return { kind: 'kid', id: Number(id) }
   }
 
@@ -34,7 +42,9 @@ export function parseLookup(input: string, hubPrefix = 'cosmos'): Lookup {
           ? "That address's capital letters don't match its checksum, so there may be a typo."
           : check.reason === 'zero'
             ? "That's the zero address. No kids go there."
-            : "That doesn't look like an Ethereum address (0x + 40 characters).",
+            : check.reason === 'burn'
+              ? "That's a burn address. No kids go there."
+              : "That doesn't look like an Ethereum address (0x + 40 characters).",
     }
   }
 

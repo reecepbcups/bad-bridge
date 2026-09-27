@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aboutMinutes, formatFee, kidList, shortAddress, shortHash, timeAgo } from './format'
+import { aboutMinutes, clockTime, formatFee, kidList, shortAddress, shortHash, timeAgo } from './format'
 
 describe('format', () => {
   it('shortens addresses and hashes', () => {
@@ -36,5 +36,11 @@ describe('format', () => {
     expect(timeAgo(new Date('2026-09-27T16:59:30Z'), now)).toBe('just now')
     expect(timeAgo(new Date('2026-09-27T16:38:00Z'), now)).toBe('22 min ago')
     expect(timeAgo(new Date('2026-09-27T15:30:00Z'), now)).toBe('1 hour ago')
+  })
+
+  it('tells the time, with the date when it was another day', () => {
+    const now = new Date(2026, 8, 27, 22, 0)
+    expect(clockTime(new Date(2026, 8, 27, 21, 41), now)).toBe('9:41 pm')
+    expect(clockTime(new Date(2026, 8, 26, 21, 41), now)).toBe('Sep 26, 9:41 pm')
   })
 })

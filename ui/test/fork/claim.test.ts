@@ -126,6 +126,20 @@ describe.skipIf(!hasAnvil)('claim on an anvil mainnet fork', () => {
     expect(await reader.isContract(BRIDGE)).toBe(true)
   })
 
+  it('estimateClaim simulates proven kids and falls back for the rest', async () => {
+    const one = await reader.estimateClaim([1])
+    expect(one.simulated).toBe(true)
+    // ~79k measured for claim(id); the node's estimate has a little headroom
+    expect(one.gas).toBeGreaterThan(60_000)
+    expect(one.gas).toBeLessThan(120_000)
+    expect(BigInt(one.fee)).toBe(BigInt(one.gas) * BigInt(one.gasPrice))
+    const two = await reader.estimateClaim([7, 8])
+    expect(two.simulated).toBe(true)
+    expect(two.gas).toBeGreaterThan(one.gas)
+    // #9 isn't proven, so the strict batch reverts and typical gas stands in
+    expect(await reader.estimateClaim([7, 9])).toMatchObject({ gas: 109_000, simulated: false })
+  })
+
   it('claims one kid with bridge.claim', async () => {
     const { txHash } = await writer().claim([1])
     const tx = await publicClient.getTransaction({ hash: txHash })

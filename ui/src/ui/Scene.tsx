@@ -5,7 +5,7 @@ import type { Stage } from '../trips/types'
 import { blob, deckY, face, rng, ropeY } from './doodle'
 import { kidWord } from './format'
 import { useReducedMotion } from './hooks'
-import { STAGE_LINE } from './stages'
+import { lowerFirst, STAGE_LINE } from './stages'
 
 // The mockup's rope bridge, driven by the real stage: walkers walk to an anchor for their stage and bob there.
 
@@ -69,7 +69,7 @@ export function Scene({ ids, stage }: { ids: readonly KidId[]; stage: Stage | nu
   const lead = useWalk(ANCHOR[stage ?? 'home-hub'], reduced)
   const shown = ids.slice(0, SHOWN)
   const extra = ids.length - shown.length
-  const where = stage ? STAGE_LINE[stage].toLowerCase() : 'getting ready'
+  const where = stage ? lowerFirst(STAGE_LINE[stage]) : 'getting ready'
   return (
     <svg
       className="scene"
@@ -87,8 +87,15 @@ export function Scene({ ids, stage }: { ids: readonly KidId[]; stage: Stage | nu
       />
       <path d="M0,230 L0,124 Q45,112 92,118 L138,121 L150,230 Z" fill="var(--hub-tint)" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
       <path d="M640,230 L640,124 Q595,112 548,118 L502,121 L490,230 Z" fill="var(--eth-tint)" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
-      <text x="16" y="160" className="hub">
+      <text x="16" y="160" className="hub wide">
         Cosmos Hub
+      </text>
+      {/* phones draw the labels bigger, and "Cosmos Hub" only fits its bank on two lines */}
+      <text x="12" y="156" className="hub narrow" aria-hidden="true">
+        <tspan x="12">Cosmos</tspan>
+        <tspan x="12" dy="28">
+          Hub
+        </tspan>
       </text>
       <text x="624" y="160" textAnchor="end" className="eth">
         Ethereum

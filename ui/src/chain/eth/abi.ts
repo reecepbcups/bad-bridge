@@ -9,6 +9,8 @@ export const bridgeAbi = parseAbi([
   'function proven(uint32 tokenId) view returns (address)',
   'function ownerOf(uint256 tokenId) view returns (address)',
   'function ESCROW() view returns (bytes32)',
+  'function ROUTER() view returns (address)',
+  'function clientId() view returns (string)',
   'function claim(uint32 tokenId)',
   'error NotProven(uint32 tokenId)',
   'error ClientFrozen()',

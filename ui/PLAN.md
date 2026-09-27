@@ -8,7 +8,7 @@ Turn `ui/mockup/index.html` into a real app that bridges Bad Kids from the Cosmo
 |-|-|-|
 | Stack | Vite + React + TypeScript, pnpm | Best wallet library support. It's a static SPA. |
 | Backend | None | The browser reads everything straight from public Hub/Eth RPCs (all CORS-open, checked). It matches the "no admin, nobody to trust" story. |
-| Hosting | Decide later | Build a plain `dist/` with hash routing and relative assets, so Vercel, Cloudflare, Railway and IPFS all work. |
+| Hosting | Decide later, but only on an origin of its own: a dedicated (sub)domain or a subdomain IPFS gateway (`<cid>.ipfs.dweb.link`) | Build a plain `dist/` with hash routing and relative assets, so Vercel, Cloudflare, Railway and IPFS all work. A path gateway (`ipfs.io/ipfs/…`) or a GitHub project page shares its origin with other pages, which could then script the app; Send is switched off there. Headers and CSP: README "Hosting". |
 | Eth wallets | wagmi v2 + viem. Injected (EIP-6963), WalletConnect, Coinbase | Custom connect sheet, no RainbowKit, so it matches the crayon look. |
 | Hub wallets | graz (Keplr, Leap, Cosmostation, WalletConnect) + cosmjs | Also a custom connect sheet. |
 | Images | `badkidsweb.storage.googleapis.com/badkids/images/256/{id}.jpg`, falling back to IPFS `QmbGvE3…/{id}.jpg` via a gateway | Only `kidImage(id)` knows about sources, so they're easy to swap. |
@@ -74,14 +74,23 @@ A **trip** is one kid's journey. Its state is always rebuilt from chain. localSt
 1. **Config sanity at startup.**
    - The escrow's `config {}` must equal the deployment's cw721.
    - `bridge.ESCROW()` must equal the bech32-decoded escrow.
-   - If either check fails, the Send button is hard-disabled and a visible error explains why.
+   - `bridge.ROUTER()` must be the pinned Eureka router, `bridge.clientId()` must be `cosmoshub-0`, the client it resolves to must be the configured light client, and that client's `chainId` must be `cosmoshub-4`.
+   - If any check fails, the Send button is hard-disabled and a visible error explains why.
+   - These reads come from public RPCs: they catch config and ops mistakes, not a malicious endpoint.
+   - Right before signing, the light client is read again: frozen or unreadable refuses the send.
 2. **Recipient.**
    - It defaults to the connected ETH wallet.
    - A pasted address must be 0x plus 40 hex characters, not the zero address, and pass the EIP-55 checksum when mixed-case.
    - A pasted address that isn't the connected wallet gets a "this isn't your connected wallet" note.
    - A contract recipient (`getCode != 0x`) gets a warning, plus a second checkbox confirming it can hold NFTs.
+   - Precompiles and system addresses (up to `0x…ffff`) and `0x…dEaD` are refused.
+   - A wallet on another network doesn't auto-fill: a smart-contract wallet may not exist at that address on Ethereum.
+   - The review screen shows the whole address in groups of four, and the `msg` the wallet will show, to compare.
+   - "Got it, one way only" is for one address: changing the recipient un-ticks it, and ticking freezes an auto-filled address.
 3. **Encoding** is tested against the golden vector above, and the decode round-trip is tested too.
 4. **Simulate before signing.**
+   - The wallet signs the fee as given (`preferNoSetFee`), so the fee is capped: the feemarket price is clamped at 0.05 uatom/gas, simulated gas over 600k per kid plus 300k is refused, and so is a fee over 0.25 ATOM plus 0.05 per kid (`FeeTooHigh`).
+   - At most 100 kids per send (`TooManyKids`): each is ~312k gas and the Hub's block limit is 75M.
    - Map escrow errors to kid-friendly copy: `WrongCollection`, `BadTokenId`, `BadRecipient`, `ZeroRecipient`, `AlreadyBridged`.
    - A failed simulation never opens the wallet.
    - This also catches the open question of whether `cw721-migration` calls the receiver hook.

@@ -26,12 +26,12 @@ describe('Banners', () => {
     expect(render(<Banners />).container).toBeEmptyDOMElement()
   })
 
-  it('says the bridge is paused when the client is frozen', () => {
+  it('says the bridge is stuck when the client is frozen', () => {
     hooks.health = state(health(true))
     hooks.sanity = state<ConfigSanity>({ ok: true, problems: [], status: 'ok' })
     render(<Banners />)
-    expect(screen.getByRole('status')).toHaveTextContent('The bridge is paused')
-    expect(screen.getByRole('status')).toHaveTextContent('Kids that are already proven can still be claimed.')
+    expect(screen.getByRole('status')).toHaveTextContent('The bridge is stuck for now')
+    expect(screen.getByRole('status')).toHaveTextContent('Kids that already made it across can still be claimed.')
   })
 
   it('explains a contract mismatch, preferring the hook message', () => {

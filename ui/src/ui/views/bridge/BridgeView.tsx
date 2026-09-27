@@ -1,3 +1,5 @@
+import { useBridge } from '../../../chain/context'
+import { isLive } from '../../../config/deployments'
 import { useTrips } from '../../../trips/hooks'
 import { Card } from '../../chrome/Card'
 import { Stepper } from '../../chrome/Stepper'
@@ -11,6 +13,7 @@ import './bridge.css'
 
 /** pick → review → crossing → claim → done, with the stepper above. */
 export function BridgeView() {
+  const { deployment } = useBridge()
   const { flow } = useFlow()
   // faster polling while the kids are on the bridge
   const trips = useTrips({ ids: flow.sent?.ids ?? [] }, { live: true })
@@ -20,7 +23,7 @@ export function BridgeView() {
   const list = trips.data ?? []
   return (
     <>
-      <Stepper current={STEP_OF[step]} />
+      {isLive(deployment) && <Stepper current={STEP_OF[step]} />}
       <Card className={`step-${step}`}>
         {step === 'pick' && <PickStep />}
         {step === 'review' && <ReviewStep />}

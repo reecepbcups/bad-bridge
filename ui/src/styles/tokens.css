@@ -24,6 +24,9 @@
   --ok-ink: #268449;
   /* text on an --eth-ink fill (small text) or an --eth fill (big text) */
   --on-eth: #FFFFFF;
+  /* the crossing scene's land labels, on --hub-tint / --eth-tint (small on phones) */
+  --hub-deep: #5B3FD6;
+  --eth-deep: #0A58CC;
 
   --display: "Gaegu", "Comic Sans MS", "Chalkboard SE", cursive;
   --body: "Nunito", ui-rounded, system-ui, sans-serif;
@@ -39,6 +42,7 @@
     --hub: #B7A3FF; --hub-tint: #2C2A44; --eth: #82B4FF; --eth-tint: #1F3048;
     --crayon: #FF7C5E; --sun: #FFE070; --ok: #6BD68E;
     --hub-ink: #B7A3FF; --eth-ink: #82B4FF; --crayon-ink: #FF7C5E; --ok-ink: #6BD68E; --on-eth: #10233F;
+    --hub-deep: #B7A3FF; --eth-deep: #82B4FF;
   }
 }
 
@@ -48,4 +52,5 @@
   --hub: #B7A3FF; --hub-tint: #2C2A44; --eth: #82B4FF; --eth-tint: #1F3048;
   --crayon: #FF7C5E; --sun: #FFE070; --ok: #6BD68E;
   --hub-ink: #B7A3FF; --eth-ink: #82B4FF; --crayon-ink: #FF7C5E; --ok-ink: #6BD68E; --on-eth: #10233F;
+  --hub-deep: #B7A3FF; --eth-deep: #82B4FF;
 }

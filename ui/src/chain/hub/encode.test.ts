@@ -119,6 +119,10 @@ describe('token ids', () => {
     expect(codeOf(() => checkKidIds([4294967296]))).toBe('BadTokenId')
     expect(codeOf(() => checkKidIds([1, 2, 1]))).toBe('BadTokenId')
     expect(codeOf(() => checkKidIds([1, 2, 3]))).toBe('no error')
+    // at most 100 kids per send
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => i + 1)
+    expect(codeOf(() => checkKidIds(ids(100)))).toBe('no error')
+    expect(codeOf(() => checkKidIds(ids(101)))).toBe('TooManyKids')
   })
 })
 

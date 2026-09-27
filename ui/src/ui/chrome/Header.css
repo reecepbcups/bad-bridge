@@ -13,7 +13,10 @@ button.chip { cursor: pointer; }
 button.chip:disabled { cursor: progress; opacity: .7; }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .chip.off .dot { background: none !important; border: 2px solid currentColor; }
+.chip-text { display: grid; gap: 2px; text-align: left; }
+.chip-chain { font: 800 10px/1 var(--body); color: var(--ink-soft); letter-spacing: .2px; }
 
 @media (max-width: 520px) {
   .logo { font-size: 38px; }
+  .chip { min-height: 44px; }
 }

@@ -14,10 +14,10 @@ export function Banners() {
     <div className="banners">
       {frozen && (
         <div className="banner paused" role="status">
-          <b>The bridge is paused</b>
+          <b>The bridge is stuck for now</b>
           <span>
-            Ethereum's light client of the Hub is frozen, so new kids can't be proven and sending is off. Kids that are already
-            proven can still be claimed.
+            Ethereum has stopped accepting updates from the Hub, so new kids can't cross and sending is off. Kids that already
+            made it across can still be claimed.
             {/* COPY: paused banner */}
           </span>
         </div>
@@ -49,5 +49,7 @@ function describe(p: ConfigProblem): string {
       return `The Ethereum bridge trusts escrow ${shortAddress(p.actual)}, not this site's ${shortAddress(p.expected)}.`
     case 'NotLive':
       return "The bridge isn't deployed yet."
+    case 'BridgeClient':
+      return "The Ethereum bridge isn't linked to the light client this site expects."
   }
 }

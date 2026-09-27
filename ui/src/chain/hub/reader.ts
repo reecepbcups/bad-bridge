@@ -1,9 +1,23 @@
 // HubReader over REST (LCD) with the CometBFT RPC list as fallback.
 
 import { fromBase64, fromBech32, fromUtf8, toBase64, toHex, toUtf8 } from '@cosmjs/encoding'
-import { QuerySmartContractStateRequest, QuerySmartContractStateResponse } from 'cosmjs-types/cosmwasm/wasm/v1/query'
+import {
+  QueryContractInfoRequest,
+  QueryContractInfoResponse,
+  QuerySmartContractStateRequest,
+  QuerySmartContractStateResponse,
+} from 'cosmjs-types/cosmwasm/wasm/v1/query'
 import type { Deployment } from '../../config/deployments'
-import { BridgeError, type EscrowRecord, type HubAddress, type HubBlock, type HubReader, type KidId, type SendInfo } from '../types'
+import {
+  BridgeError,
+  type ContractInfo,
+  type EscrowRecord,
+  type HubAddress,
+  type HubBlock,
+  type HubReader,
+  type KidId,
+  type SendInfo,
+} from '../types'
 import { isKidId, parseKidId, recipientFromHex } from './encode'
 import { toHubError } from './errors'
 import { bridgeSends, parseChainTime, parseRestSearch, parseRpcSearch, toHeight, type SearchedTx } from './events'
@@ -139,6 +153,28 @@ function blockCall(height: number | 'latest') {
       const result = await http.rpc(base, 'block', height === 'latest' ? {} : { height: String(height) })
       const block = isRecord(result) && isRecord(result.block) ? result.block : {}
       return parseBlock(block.header, `${base} block ${height}`)
+    },
+  }
+}
+
+/** contract_info's code id and admin. An empty admin means nobody can migrate the contract. */
+function parseContractInfo(codeId: unknown, admin: unknown, where: string): ContractInfo {
+  const id = typeof codeId === 'bigint' ? Number(codeId) : typeof codeId === 'string' && /^\d+$/.test(codeId) ? Number(codeId) : NaN
+  if (!Number.isSafeInteger(id) || id <= 0 || typeof admin !== 'string') throw new EndpointError(`${where}: no contract_info`)
+  return { codeId: id, admin: admin === '' ? null : admin }
+}
+
+function contractInfoCall(address: HubAddress) {
+  return {
+    async rest(base: string, http: Http): Promise<ContractInfo> {
+      const body = await http.get(`${base}/cosmwasm/wasm/v1/contract/${address}`)
+      const info = isRecord(body) && isRecord(body.contract_info) ? body.contract_info : {}
+      return parseContractInfo(info.code_id, info.admin, `${base} contract ${address}`)
+    },
+    async rpc(base: string, http: Http): Promise<ContractInfo> {
+      const data = toHex(QueryContractInfoRequest.encode({ address }).finish())
+      const res = QueryContractInfoResponse.decode(await abciQuery(http, base, '/cosmwasm.wasm.v1.Query/ContractInfo', data))
+      return parseContractInfo(res.contractInfo?.codeId, res.contractInfo?.admin, `${base} contract ${address}`)
     },
   }
 }
@@ -281,6 +317,12 @@ export function createHubReader(deployment: Deployment, options: TransportOption
         const data = await smartQuery(t, escrow(), { config: {} }, 'escrow config')
         if (typeof data !== 'string') throw new BridgeError('Unknown', `escrow config returned ${JSON.stringify(data)}`)
         return data
+      }),
+
+    contractInfo: (address) =>
+      guard(async () => {
+        checkAddress(address, 'contract')
+        return t.run('contract info', contractInfoCall(address))
       }),
   }
 }

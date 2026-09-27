@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:reece-test": "VITE_DEPLOYMENT=reece-test vite build",
+    "build:badkids": "VITE_DEPLOYMENT=badkids vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint .",

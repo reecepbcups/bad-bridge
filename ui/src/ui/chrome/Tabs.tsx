@@ -19,7 +19,11 @@ const TABS: readonly { tab: Tab; href: string; label: string }[] = [
 
 /** Top-level sections. Links, not ARIA tabs: each one is its own route. */
 export function Tabs({ current }: { current: Tab | null }) {
-  const moving = useMovingCount()
+  return <TabLinks current={current} moving={useMovingCount()} />
+}
+
+/** The tab strip itself, without chain reads, so the loading shell can draw it too. */
+export function TabLinks({ current, moving = 0 }: { current: Tab | null; moving?: number }) {
   return (
     <nav className="tabs" aria-label="Sections">
       {TABS.map(({ tab, href, label }) => (

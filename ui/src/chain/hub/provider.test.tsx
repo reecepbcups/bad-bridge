@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { DEPLOYMENTS } from '../../config/deployments'
-import { HubWalletProvider } from './provider'
+import { grazOptions, HubWalletProvider } from './provider'
 import { useHubWallet, useHubWriter } from './wallet'
 
 const deployment = DEPLOYMENTS['reece-test']
@@ -29,5 +29,14 @@ describe('HubWalletProvider with real graz', () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByText('disconnected|keplr,leap,cosmostation|no writer')).toBeInTheDocument()
+  })
+})
+
+describe('grazOptions', () => {
+  it('signs the simulated fee as given, and turns WalletConnect analytics off', () => {
+    expect(grazOptions(deployment, undefined, 'https://bridge.test').walletConnect).toBeUndefined()
+    const options = grazOptions(deployment, 'abc123', 'https://bridge.test')
+    expect(options.walletDefaultOptions?.sign).toMatchObject({ preferNoSetFee: true })
+    expect(options.walletConnect?.options).toMatchObject({ projectId: 'abc123', telemetryEnabled: false })
   })
 })

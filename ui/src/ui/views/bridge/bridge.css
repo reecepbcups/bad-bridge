@@ -20,6 +20,11 @@
   border: 2px solid var(--ink); border-radius: var(--wobble);
 }
 .kid:disabled { cursor: default; opacity: .5; }
+.kid[aria-disabled="true"] { cursor: not-allowed; }
+/* already left: a link to its trip, dashed like a kid that's elsewhere */
+a.kid { display: block; text-decoration: none; }
+.kid.away { border-style: dashed; }
+.kid.away .art { opacity: .55; }
 
 /* review: the picked kids */
 .picked { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -50,6 +55,28 @@
 .picked .mini .art.doodle { padding: 2px; }
 
 /* crossing scene labels */
-.scene text.hub { fill: var(--hub-ink); }
-.scene text.eth { fill: var(--eth-ink); }
+.scene text.hub { fill: var(--hub-deep); }
+.scene text.eth { fill: var(--eth-deep); }
 .scene text.more { font-size: 22px; }
+.heights { margin: 0; }
+
+/* pick: find box, and the count + Next bar that stays in reach under a long grid */
+.find { display: grid; gap: 6px; max-width: 260px; }
+.pick-bar {
+  position: sticky; bottom: 0; z-index: 2;
+  margin-inline: -12px; padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  background: var(--paper); border-top: 2.5px dashed var(--line);
+}
+.pick-bar .cap { color: var(--crayon-ink); font-weight: 800; }
+/* a tile focused from the keyboard scrolls clear of the bar, not under it */
+:root:has(.pick-bar) { scroll-padding-bottom: 100px; }
+
+.scene text.narrow { display: none; }
+
+@media (max-width: 520px) {
+  .scene text { font-size: 30px; }
+  .scene text.wide { display: none; }
+  .scene text.narrow { display: inline; }
+  .scene text.more { font-size: 30px; }
+  .pick-bar { margin-inline: -8px; padding-inline: 8px; }
+}

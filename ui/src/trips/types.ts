@@ -80,6 +80,13 @@ export interface TripQuery {
   ids?: readonly KidId[]
 }
 
+/** One way BadBridge's link to the light client differs from the deployment. */
+export interface WiringMismatch {
+  field: 'router' | 'clientId' | 'lightClient' | 'chainId'
+  expected: string
+  actual: string
+}
+
 /** A startup sanity check that failed. Any problem hard-disables sending. */
 export type ConfigProblem = (
   /** the deployment has no escrow or bridge yet */
@@ -88,6 +95,11 @@ export type ConfigProblem = (
   | { code: 'EscrowCollection'; expected: HubAddress; actual: HubAddress }
   /** bridge.ESCROW() isn't the deployment's escrow (or isn't 32 bytes, or the configured escrow isn't) */
   | { code: 'BridgeEscrow'; expected: Hex; actual: Hex }
+  /**
+   * BadBridge isn't wired to the light client the deployment expects: its ROUTER(), its clientId(), the client
+   * the router hands back, or the chain that client follows (one entry per mismatch)
+   */
+  | { code: 'BridgeClient'; mismatches: WiringMismatch[] }
 ) & {
   /** Plain-English explanation, always set by useConfigSanity. describeConfigProblem() builds it. */
   message?: string

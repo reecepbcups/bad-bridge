@@ -1,7 +1,7 @@
 // Small UI-only hooks. Chain reads go through useBridge(); trip state comes from src/trips/hooks.ts.
 
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { useBridge } from '../chain/context'
 import { toBridgeError, type EthAddress } from '../chain/types'
 import type { QueryState } from '../trips/types'
@@ -116,6 +116,24 @@ export function useFocusHeadingOnChange(key: string): void {
     h2.focus({ preventScroll: true })
     if (h2.getBoundingClientRect().top < 0) h2.scrollIntoView({ block: 'start' })
   }, [key])
+}
+
+/**
+ * Focuses `target` once `done` turns true after `armed` was seen, if focus was lost to <body> meanwhile: the
+ * button that had it went away (a Claim button, once its kid is home). Focus somewhere else is left alone.
+ */
+export function useFocusWhenDone(armed: boolean, done: boolean, target: RefObject<HTMLElement | null>): void {
+  const wasArmed = useRef(false)
+  useEffect(() => {
+    if (armed) wasArmed.current = true
+  }, [armed])
+  useEffect(() => {
+    if (!done || !wasArmed.current) return
+    wasArmed.current = false
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    target.current?.focus()
+  }, [done, target])
 }
 
 // ---- clipboard ----

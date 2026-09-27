@@ -34,7 +34,7 @@ describe('createWagmiConfig', () => {
     wcCalls.length = 0
     const config = createWagmiConfig(deployment, { wcProjectId: 'abc123' })
     expect(config.connectors.map((c) => c.id)).toEqual(['injected', 'coinbaseWalletSDK', 'walletConnect'])
-    expect(wcCalls).toEqual([expect.objectContaining({ projectId: 'abc123', showQrModal: true })])
+    expect(wcCalls).toEqual([expect.objectContaining({ projectId: 'abc123', showQrModal: true, telemetryEnabled: false })])
   })
 
   it('refuses anything but mainnet', () => {

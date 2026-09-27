@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 const PORT = 4317
 
 // e2e runs the production build (vite preview) against the demo adapter (?demo): no network, deterministic.
+// Production builds ignore ?demo unless VITE_ALLOW_DEMO=1, so this build turns it on.
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
@@ -19,6 +20,7 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: `pnpm build && pnpm exec vite preview --port ${PORT} --strictPort`,
+    env: { VITE_DEPLOYMENT: 'reece-test', VITE_ALLOW_DEMO: '1' },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

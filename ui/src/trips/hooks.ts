@@ -11,6 +11,7 @@ import { useBridge } from '../chain/context'
 import {
   BridgeError,
   toBridgeError,
+  type ClaimEstimate,
   type ClaimStage,
   type EthAddress,
   type KidId,
@@ -24,6 +25,7 @@ import { compareTrips, isFinal } from './derive'
 import { idsKey, isKidId, discoverTrips, loadHealth, loadOwned, loadTrips, seededTrip, sortOwned, type Ctx, type WithError } from './load'
 import { keys, LIVE_POLL_MS, POLL_MS, type TripQueryKey } from './keys'
 import { checkConfig, notLive } from './sanity'
+import { loadTrustFacts, type TrustFacts } from './trust'
 import { rememberedTrips, rememberTrips, subscribeRemembered } from './storage'
 import type {
   ClaimKidsOptions,
@@ -41,6 +43,7 @@ import type {
 
 export { LIVE_POLL_MS, POLL_MS } from './keys'
 export { describeConfigProblem } from './sanity'
+export type { TrustFacts } from './trust'
 
 /**
  * The connected Hub wallet's kids, for the pick screen: still-home ones first (ascending, stage `home-hub`),
@@ -128,7 +131,9 @@ export function useHealth(options?: TripOptions): QueryState<Health> {
 }
 
 /**
- * Sends kids from the connected Hub wallet in one tx. Once it lands:
+ * Sends kids from the connected Hub wallet in one tx. Right before the wallet is involved it re-reads Ethereum's
+ * light client, not the cached health: frozen refuses with ClientFrozen, unreadable with Network, and nothing is
+ * sent either way. Once it lands:
  * - remembers them in this browser (ids, tx hash, height, recipient, sender, time), best effort;
  * - seeds the cache, so useTrip(id) and useTrips({ ids }) for the sent kids show them at once with Hs known
  *   (`catching-up`, or `locked` if Ethereum's client hasn't been read yet), and the pick screen shows them sent;
@@ -150,6 +155,7 @@ export function useSendKids(options?: SendKidsOptions): SendKidsState {
         setStage(s)
         onStage.current?.(s)
       }
+      await checkClientFresh(ctx)
       const result = await hubWriter.send(ids, recipient, { onStage: report })
       try {
         afterSend(ctx, hubWriter.address, [...new Set(ids)], recipient, result)
@@ -213,7 +219,8 @@ export function useSendEstimate(ids: readonly KidId[], recipient: EthAddress | n
 }
 
 /**
- * The startup check behind Send: the escrow accepts our cw721, and bridge.ESCROW() is our escrow (32 bytes).
+ * The startup check behind Send: the escrow accepts our cw721, bridge.ESCROW() is our escrow (32 bytes), and the
+ * bridge reaches the configured light client through the pinned Eureka router, following the Hub's chain id.
  * Send only when data?.ok === true: no data (loading), `unknown` (a read failed; error says why, re-checked
  * every 30s), `mismatch` and `not-live` all mean no. A definitive answer is cached for the session.
  */
@@ -228,8 +235,8 @@ export function useConfigSanity(): QueryState<ConfigSanity> {
       queryFn: async (): Promise<WithError<ConfigSanity>> => {
         if (!deployment.hub.escrow || !isLive(deployment)) return { value: notLive(), error: null }
         try {
-          const [cw721, bridgeEscrow] = await Promise.all([hub.escrowCw721(), eth.bridgeEscrow()])
-          return { value: checkConfig(deployment, cw721, bridgeEscrow), error: null }
+          const [cw721, bridgeEscrow, wiring] = await Promise.all([hub.escrowCw721(), eth.bridgeEscrow(), eth.bridgeWiring()])
+          return { value: checkConfig(deployment, cw721, bridgeEscrow, wiring), error: null }
         } catch (e) {
           const error = toBridgeError(e)
           if (error.code === 'NotLive') return { value: notLive(), error: null }
@@ -237,6 +244,43 @@ export function useConfigSanity(): QueryState<ConfigSanity> {
           return { value: { ok: false, status: 'unknown', problems: [] }, error }
         }
       },
+    }),
+  )
+}
+
+/**
+ * What claiming `ids` would cost now, in wei (see EthReader.estimateClaim). An empty list prices one typical kid,
+ * for copy like the FAQ. Re-read every minute.
+ */
+export function useClaimEstimate(ids: readonly KidId[]): QueryState<ClaimEstimate> {
+  const { deployment, eth } = useBridge()
+  const key = idsKey(ids)
+  return toQueryState(
+    useQuery({
+      queryKey: keys.claimEstimate(deployment.id, key),
+      enabled: isLive(deployment),
+      staleTime: 60_000,
+      refetchInterval: 60_000,
+      queryFn: async (): Promise<WithError<ClaimEstimate>> => ({
+        value: await eth.estimateClaim(key ? key.split(',').map(Number) : []),
+        error: null,
+      }),
+    }),
+  )
+}
+
+/**
+ * Who could change the contracts a kid depends on, read live: the escrow's admin and code id, the collection's
+ * admin, and whether BadBridge's Eureka router is upgradeable. A fact that couldn't be read is undefined, and the
+ * failure is in `error`. From public RPCs: good for catching mistakes, not a trust anchor.
+ */
+export function useTrustFacts(): QueryState<TrustFacts> {
+  const { deployment, hub, eth } = useBridge()
+  return toQueryState(
+    useQuery({
+      queryKey: keys.trust(deployment.id),
+      staleTime: 5 * 60_000,
+      queryFn: () => loadTrustFacts(deployment, hub, eth),
     }),
   )
 }
@@ -285,6 +329,25 @@ function useTripsState(ctx: Ctx, q: UseQueryResult<WithError<Trip[]>>): QuerySta
 function refetchNow(ctx: Ctx, q: UseQueryResult<unknown>, reads: readonly (readonly unknown[])[]): void {
   for (const queryKey of reads) void ctx.qc.invalidateQueries({ queryKey, refetchType: 'none' })
   void q.refetch()
+}
+
+/** Reads the light client now. Frozen → ClientFrozen, unreadable → Network; either way the health banner refreshes. */
+async function checkClientFresh(ctx: Ctx): Promise<void> {
+  const d = ctx.deployment.id
+  let frozen: boolean
+  try {
+    const client = await ctx.eth.client()
+    ctx.qc.setQueryData(keys.client(d), client)
+    frozen = client.frozen
+  } catch (e) {
+    void ctx.qc.invalidateQueries({ queryKey: keys.health(d) })
+    const error = toBridgeError(e)
+    throw new BridgeError(error.code === 'NotLive' ? 'NotLive' : 'Network', `couldn't re-check Ethereum's light client before sending, so nothing was sent: ${error.detail ?? error.code}`, { cause: e })
+  }
+  if (frozen) {
+    void ctx.qc.invalidateQueries({ queryKey: keys.health(d) })
+    throw new BridgeError('ClientFrozen', "Ethereum's light client of the Hub is frozen, so nothing was sent")
+  }
 }
 
 function afterSend(ctx: Ctx, sender: string, ids: readonly KidId[], recipient: EthAddress, result: SendResult): void {

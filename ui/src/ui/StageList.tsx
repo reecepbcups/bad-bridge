@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
 import { useBridge } from '../chain/context'
 import type { Health, Stage } from '../trips/types'
-import { aboutMinutes, blocks, shortHash } from './format'
+import { ExtLink } from './ExtLink'
+import { aboutMinutes, blocks, clockTime, shortHash } from './format'
 import { useWallClock } from './hooks'
-import { LIST_AT, TRACK_AT, TRACK_LABELS } from './stages'
+import { JOURNEY, JOURNEY_AT, TRACK_LABELS } from './stages'
 
 /** What the stage list needs to know about a trip (or a group of kids sent in one tx). */
 export interface StageFacts {
@@ -15,35 +16,59 @@ export interface StageFacts {
   provingSince?: Date
 }
 
-/** The mockup's four-step crossing list, with live details on the current step. */
-export function StageList({ facts, health }: { facts: StageFacts; health: Health | undefined }) {
+/** Sightings this short say nothing about how long the proof takes, so no clock until then. */
+export const PROVING_QUIET_MS = 5 * 60_000
+
+// COPY: proving sighting and ready line
+/** "Seen proving on this device since 9:41 pm.", once it has been seen proving for a while. */
+export function provingSeen(since: Date | undefined, now: number): string | null {
+  if (!since || now - since.getTime() < PROVING_QUIET_MS) return null
+  return `Seen proving on this device since ${clockTime(since, new Date(now))}.`
+}
+
+/**
+ * The four-step journey, with live details on the current step. `kids` is how many travel together (for the
+ * wording); `showLag` is off where the page already says how far behind Ethereum is.
+ */
+export function StageList({
+  facts,
+  health,
+  kids = 1,
+  showLag = true,
+}: {
+  facts: StageFacts
+  health: Health | undefined
+  kids?: number
+  showLag?: boolean
+}) {
   const { deployment } = useBridge()
   const now = useWallClock()
-  const at = LIST_AT[facts.stage]
+  const at = JOURNEY_AT[facts.stage]
   // Hs unknown: it's somewhere in steps 2–3 and we don't guess which
   const current = facts.stage === 'crossing' ? [1, 2] : [at]
   // stale numbers (a failed read, or hours behind) aren't worth quoting
-  const lag = health && !health.stale && health.lagBlocks > 0 ? `Ethereum is ${aboutMinutes(health.lagMinutes)} behind the Hub.` : null
+  const lag =
+    showLag && health && !health.stale && health.lagBlocks > 0 ? `Ethereum is ${aboutMinutes(health.lagMinutes)} behind the Hub.` : null
+  const one = kids === 1
 
-  const items: { title: string; detail: ReactNode; live?: ReactNode }[] = [
+  // COPY: stage list details
+  const items: { detail: ReactNode; live?: ReactNode }[] = [
     {
-      title: 'Locked in the Hub escrow',
       detail: facts.sendTx ? (
         <>
-          send_nft confirmed ·{' '}
-          <a className="mono" href={deployment.explorer.hubTx(facts.sendTx)} target="_blank" rel="noopener">
-            {shortHash(facts.sendTx)} ↗
-          </a>
+          Locked in the Hub escrow ·{' '}
+          <ExtLink className="mono nowrap" href={deployment.explorer.hubTx(facts.sendTx)}>
+            {shortHash(facts.sendTx)}
+          </ExtLink>
         </>
       ) : at > 0 ? (
-        'The escrow has it.'
+        'Locked in the Hub escrow.'
       ) : (
         'Waiting for the Hub to confirm the send.'
       ),
     },
     {
-      title: 'Ethereum catches up to the Hub',
-      detail: "Ethereum's view of the Hub moves forward whenever Eureka relays a transfer.",
+      detail: 'Ethereum updates its view of the Hub every so often.',
       live:
         facts.stage === 'crossing' ? (
           <>
@@ -58,23 +83,23 @@ export function StageList({ facts, health }: { facts: StageFacts; health: Health
         ),
     },
     {
-      title: 'Making the proof',
-      detail: 'The batcher proves the kid left the Hub. Nobody has to trust it.',
+      detail: 'A prover shows Ethereum the kid left the Hub. Nobody has to trust it.',
       live: facts.stuck ? (
         <>
-          The prover looks slow right now. It can't lie, it can only stall, and anyone can run one.{' '}
-          <a href={`${deployment.sourceUrl}#readme`} target="_blank" rel="noopener">
-            How to run a prover ↗
-          </a>
+          {one ? 'This kid is' : 'Your kids are'} safe in the escrow and will cross when a prover picks {one ? 'it' : 'them'} up.
+          Nothing to do but wait.{' '}
+          <span className="secondary">
+            Or <ExtLink href={`${deployment.sourceUrl}#readme`}>run a prover yourself</ExtLink>
+          </span>
           {/* COPY: stuck prover note */}
         </>
-      ) : facts.provingSince ? (
-        `Proving for ${aboutMinutes((now - facts.provingSince.getTime()) / 60_000).replace(/^about /, '')} so far.`
-      ) : null,
+      ) : (
+        provingSeen(facts.provingSince, now)
+      ),
     },
     {
-      title: 'Proof lands on Ethereum',
-      detail: "Checked on-chain against the Hub's state. Then it can be claimed.",
+      detail: 'Anyone can claim it, and it always lands at the address it was sent to.',
+      live: facts.stage === 'ready' ? 'Proven and ready to claim.' : null,
     },
   ]
 
@@ -83,13 +108,13 @@ export function StageList({ facts, health }: { facts: StageFacts; health: Health
       {items.map((item, i) => {
         const state = i < at && !current.includes(i) ? 'done' : current.includes(i) ? 'now' : ''
         return (
-          <li key={item.title} className={state} aria-current={state === 'now' ? 'step' : undefined}>
+          <li key={JOURNEY[i]} className={state} aria-current={state === 'now' ? 'step' : undefined}>
             <span className="tick" aria-hidden="true">
               {state === 'done' ? '✓' : i + 1}
             </span>
             <span>
               <b>
-                {item.title}
+                {JOURNEY[i]}
                 {state && <span className="sr-only">{state === 'done' ? ' (done)' : ' (happening now)'}</span>}
               </b>
               <span className="d">{item.detail}</span>
@@ -102,9 +127,9 @@ export function StageList({ facts, health }: { facts: StageFacts; health: Health
   )
 }
 
-/** The tracker's four crayon segments: Sent, Seen, Proven, Claimed. Decorative: the pill says the same. */
+/** The tracker's four crayon segments, the same four steps as the stage list. Decorative: the pill says the same. */
 export function TrackBar({ stage }: { stage: Stage }) {
-  const cur = TRACK_AT[stage]
+  const cur = JOURNEY_AT[stage]
   return (
     <div className="trackbar" aria-hidden="true">
       <div className="track">

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { useBridge } from '../../chain/context'
 import type { Route } from '../../router'
 import { Banners } from './Banners'
@@ -18,7 +18,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
   }, [route.name])
   return (
     <div className="wrap">
-      <a className="skip" href="#main">
+      <a className="skip" href="#main" onClick={skipToMain}>
         Skip to content
       </a>
       {deployment.demo && (
@@ -33,4 +33,13 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
       <Footer />
     </div>
   )
+}
+
+/** The hash is the router's, so "#main" would be a 404: move focus by hand instead. */
+export function skipToMain(e: MouseEvent<HTMLAnchorElement>): void {
+  e.preventDefault()
+  const target = document.querySelector<HTMLElement>('#main h2') ?? document.getElementById('main')
+  if (!target) return
+  if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1')
+  target.focus()
 }
