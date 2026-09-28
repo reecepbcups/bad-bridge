@@ -209,7 +209,7 @@ export function ReviewStep() {
           {msg && (
             <p className="hint">
               <b>Check your wallet:</b> it will show <span className="mono">msg: {msg}</span>
-              {n > 1 ? ' for each kid' : ''}. It should match.
+              {n > 1 ? ' for each kid' : ''}. It should match. Look for it in {walletName} on the send, as the msg.
               {/* COPY: wallet msg check */}
             </p>
           )}

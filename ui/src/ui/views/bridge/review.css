@@ -1,6 +1,6 @@
 /* Review screen: the whole recipient, chunked so it can be checked by eye, and the wallet msg to compare. */
-.recipient-full { display: grid; gap: 4px; margin-top: -4px; }
+.recipient-full { display: grid; gap: 10px; margin-top: 4px; padding: 0 4px; }
 .recipient-full p { margin: 0; }
-.recipient-full .chunks { font: 600 17px/1.35 var(--mono); color: var(--ink); word-spacing: .15em; overflow-wrap: anywhere; }
+.recipient-full .chunks { font: 600 17px/1.6 var(--mono); color: var(--ink); word-spacing: .15em; overflow-wrap: anywhere; }
 .recipient-full .hint .mono { overflow-wrap: anywhere; }
 .recipient-full .hint b { font-weight: 800; }
