@@ -66,7 +66,8 @@ export default function DemoBridgeProvider({
   )
 
   const value = useMemo<BridgeContextValue>(
-    () => ({ deployment: active, ...readers, hubWallet, ethWallet, hubWriter, ethWriter }),
+    // Proving is real-chain only: no Succinct network or SP1 stdin to simulate in the demo sim.
+    () => ({ deployment: active, ...readers, hubWallet, ethWallet, hubWriter, ethWriter, proveKid: null }),
     [active, readers, hubWallet, ethWallet, hubWriter, ethWriter],
   )
 

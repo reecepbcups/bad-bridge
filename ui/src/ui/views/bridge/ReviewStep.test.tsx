@@ -68,6 +68,7 @@ function renderReview(
       ethWallet: connected(account, 'MetaMask', { wrongChain: options.wrongChain === true }),
       hubWriter,
       ethWriter: fakeEthWriter(chain, account),
+      proveKid: null,
     }
     return <BridgeContext.Provider value={value}>{children}</BridgeContext.Provider>
   }

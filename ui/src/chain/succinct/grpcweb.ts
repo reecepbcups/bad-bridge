@@ -55,7 +55,10 @@ export async function grpcWebCall(path: string, body: Uint8Array, fetchImpl: typ
     res = await fetchImpl(`${SUCCINCT_MAINNET_RPC}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/grpc-web+proto', 'x-grpc-web': '1' },
-      body: frame(body),
+      // Blob, not the Uint8Array directly: TS 6's Uint8Array<ArrayBufferLike> return types (from functions
+      // typed to return plain `Uint8Array`) aren't assignable to BodyInit/BlobPart, which want the buffer
+      // narrowed to a concrete ArrayBuffer — `new Uint8Array(bytes)` copies into a fresh one that satisfies it.
+      body: new Blob([new Uint8Array(frame(body))]),
     })
   } catch (e) {
     throw new BridgeError('Network', `${path}: ${e instanceof Error ? e.message : String(e)}`, { cause: e })

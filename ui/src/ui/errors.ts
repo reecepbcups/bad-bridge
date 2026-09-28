@@ -30,7 +30,7 @@ const _exhaustive: Missing extends never ? true : Missing = true
 void _exhaustive
 
 /** What the user was doing, so the copy can name the right wallet, coin and chain. */
-export type ErrorAction = 'send' | 'claim' | 'connect' | 'read'
+export type ErrorAction = 'send' | 'claim' | 'connect' | 'read' | 'prove'
 
 export interface ErrorContext {
   action: ErrorAction
@@ -74,7 +74,7 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
     body: 'Kids sent there are gone forever, so the send was stopped before it started. Nothing was sent.',
   }),
   AlreadyBridged: ({ kid, action }) =>
-    action === 'claim'
+    action === 'claim' || action === 'prove'
       ? {
           title: `${kid === 'that kid' ? 'One of these kids' : kid} is already claimed`,
           body: "It's already minted on Ethereum, so this claim can't go through. Nothing else changed.",
@@ -115,9 +115,12 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
         : `You said no in ${wallet}, so nothing happened. Try again whenever you're ready.`,
   }),
   InsufficientFunds: ({ action }) =>
-    action === 'claim'
-      ? { title: 'Not enough ETH for gas', body: 'Claiming is a normal Ethereum transaction. Top up a little ETH and try again.' }
-      : { title: 'Not enough ATOM for the fee', body: 'Sending needs a tiny bit of ATOM for the Hub fee. Top up and try again.' },
+    action === 'send'
+      ? { title: 'Not enough ATOM for the fee', body: 'Sending needs a tiny bit of ATOM for the Hub fee. Top up and try again.' }
+      : {
+          title: 'Not enough ETH for gas',
+          body: `${action === 'prove' ? 'Proving' : 'Claiming'} is a normal Ethereum transaction. Top up a little ETH and try again.`,
+        },
   WrongChain: ({ wallet, action }) => ({
     title: 'Wrong network',
     body:
@@ -144,6 +147,7 @@ const WALLET_FALLBACK: Readonly<Record<ErrorAction, string>> = {
   claim: 'your wallet',
   connect: 'Your wallet',
   read: 'your wallet',
+  prove: 'your wallet',
 }
 
 /** Kid-friendly headline and body for any error. Non-BridgeErrors are treated as Unknown. */

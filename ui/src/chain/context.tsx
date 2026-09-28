@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { Deployment } from '../config/deployments'
+import type { ProveKidWriter } from './prove'
 import type { EthAddress, EthReader, EthWriter, HubAddress, HubReader, HubWriter, WalletState } from './types'
 
 /** What every component reads chain state through. Filled by DemoBridgeProvider or RealBridgeProvider. */
@@ -18,6 +19,8 @@ export interface BridgeContextValue {
   hubWriter: HubWriter | null
   /** Ethereum signer; null until the Ethereum wallet is connected. */
   ethWriter: EthWriter | null
+  /** Proves and submits one pending kid straight from the browser; null until the Ethereum wallet is connected. */
+  proveKid: ProveKidWriter | null
 }
 
 export const BridgeContext = createContext<BridgeContextValue | null>(null)

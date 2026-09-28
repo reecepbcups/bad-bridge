@@ -3,8 +3,12 @@
 // u64 Vec/String length prefixes) — the same config hub/stdin.ts's encoder targets on the request side.
 
 export class BincodeReader {
+  private readonly data: Uint8Array
   private offset = 0
-  constructor(private readonly data: Uint8Array) {}
+
+  constructor(data: Uint8Array) {
+    this.data = data
+  }
 
   private view(size: number): DataView {
     if (this.offset + size > this.data.length) throw new Error('bincode: unexpected end of data')

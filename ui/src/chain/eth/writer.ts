@@ -22,6 +22,8 @@ import {
   type Sp1ProofArgs,
   type SubmitBatchResult,
 } from '../types'
+import { requestGroth16Proof as requestGroth16ProofImpl, type SuccinctStage } from '../succinct/client'
+import type { DecodedGroth16Proof } from '../succinct/proof'
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
 import { decodeRevert, revertToBridgeError, toEthError } from './errors'
@@ -62,13 +64,18 @@ type Report = (stage: ClaimStage) => void
 /** Progress for one submitBatch call. */
 type BatchReport = (stage: BatchStage) => void
 
-/** An EthWriter that also carries submitBatch, for the proof page (createEthWriter returns this). */
+/** An EthWriter that also carries submitBatch and requestGroth16Proof, for the proof page (createEthWriter returns this). */
 export interface EthWriterWithBatch extends EthWriter {
   /**
    * Anyone can submit a batch (it's checked on-chain, not by msg.sender) — this always uses the connected
    * wallet, same as claim. `options.onStage` reports signing → confirming.
    */
   submitBatch(proofHeight: bigint, cs: ConsensusStateArgs, sp1Proof: Sp1ProofArgs, options?: BatchOptions): Promise<SubmitBatchResult>
+  /**
+   * Requests a Groth16 membership proof from Succinct's network, signing with the same connected wallet
+   * that would submitBatch it. The wallet client stays inside this module — callers never see it.
+   */
+  requestGroth16Proof(vkHash: Hex, stdinBytes: Uint8Array, options?: { onStage?: (stage: SuccinctStage) => void }): Promise<DecodedGroth16Proof>
 }
 
 /** Splits requested ids into what can be claimed now, and why the rest can't. */
@@ -247,6 +254,15 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
     return { txHash: receipt.transactionHash }
   }
 
+  async function requestGroth16Proof(
+    vkHash: Hex,
+    stdinBytes: Uint8Array,
+    onStage: ((stage: SuccinctStage) => void) | undefined,
+  ): Promise<DecodedGroth16Proof> {
+    const wallet = await getWallet()
+    return requestGroth16ProofImpl({ wallet, vkHash, stdinBytes, onStage })
+  }
+
   return {
     address,
     claim: async (ids, options) => {
@@ -267,6 +283,13 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
         throw toEthError(e)
       } finally {
         stage.done()
+      }
+    },
+    requestGroth16Proof: async (vkHash, stdinBytes, options) => {
+      try {
+        return await requestGroth16Proof(vkHash, stdinBytes, options?.onStage)
+      } catch (e) {
+        throw toEthError(e)
       }
     },
   }

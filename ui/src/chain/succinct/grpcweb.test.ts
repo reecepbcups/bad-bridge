@@ -7,7 +7,10 @@ import { grpcWebCall } from './grpcweb'
 const LIVE_OK_RESPONSE = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0f, 0x67, 0x72, 0x70, 0x63, 0x2d, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x3a, 0x30, 0x0d, 0x0a])
 
 function fakeFetch(body: Uint8Array, status = 200): typeof fetch {
-  return () => Promise.resolve(new Response(body, { status, headers: { 'content-type': 'application/grpc-web+proto' } }))
+  // A raw ArrayBuffer, not a Blob: this test environment's Response+Blob doesn't preserve bytes (stringifies
+  // to "[object Blob]") the way a real browser does — production's Blob usage is unaffected by this, only
+  // this fixture's body construction needs to sidestep it.
+  return () => Promise.resolve(new Response(new Uint8Array(body).buffer, { status, headers: { 'content-type': 'application/grpc-web+proto' } }))
 }
 
 describe('grpcWebCall', () => {

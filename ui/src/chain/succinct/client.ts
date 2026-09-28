@@ -5,14 +5,16 @@
 // field number, enum value and default here was read directly off sp1-sdk 6.1.0's source in
 // ~/.cargo/registry (network/{client,prover,utils}.rs and network/proto/**), not guessed.
 
-import { hexToBytes, type Address, type Hex } from 'viem'
-import type { SignerClient } from '../eth/writer'
+import { hexToBytes, type Account, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
 import { BridgeError } from '../types'
 import { grpcWebCall } from './grpcweb'
 import { decodeGroth16ProofFromNetwork, type DecodedGroth16Proof } from './proof'
 import { signBytes, signCreateArtifact } from './sign'
 import { MessageReader, MessageWriter } from './wire'
 import { zstdCompress } from './zstd'
+
+// Duplicated from eth/writer.ts's SignerClient — see sign.ts's comment on why this isn't imported.
+type SignerClient = Client<Transport, Chain | undefined, Account>
 
 /** sp1-prover 6.1.0 and 6.8.0 (this repo's Cargo.lock resolves both, for different deps) both pin this. */
 const SP1_CIRCUIT_VERSION = 'v6.1.0'
@@ -117,7 +119,7 @@ async function createArtifact(wallet: SignerClient, fetchImpl: typeof fetch): Pr
 }
 
 async function uploadArtifact(presignedUrl: string, bytes: Uint8Array, fetchImpl: typeof fetch): Promise<void> {
-  const res = await fetchImpl(presignedUrl, { method: 'PUT', body: bytes })
+  const res = await fetchImpl(presignedUrl, { method: 'PUT', body: new Blob([new Uint8Array(bytes)]) })
   if (!res.ok) throw new BridgeError('Network', `stdin upload: HTTP ${res.status}`)
 }
 

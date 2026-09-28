@@ -11,9 +11,13 @@
 //   here exactly, since the live server's expectations weren't independently verified — if CreateArtifact
 //   gets rejected, the first thing to try is the standard 27/28 byte instead (see the build plan).
 
-import { bytesToHex, hexToBytes } from 'viem'
+import { bytesToHex, hexToBytes, type Account, type Chain, type Client, type Transport } from 'viem'
 import { signMessage } from 'viem/actions'
-import type { SignerClient } from '../eth/writer'
+
+// Duplicated from eth/writer.ts's SignerClient rather than imported, so this module never depends on
+// eth/writer.ts (which itself depends on succinct/client.ts, which depends on this file — importing the
+// type back from eth/writer.ts would make that a cycle).
+type SignerClient = Client<Transport, Chain | undefined, Account>
 
 const CREATE_ARTIFACT_MESSAGE = new TextEncoder().encode('create_artifact')
 
