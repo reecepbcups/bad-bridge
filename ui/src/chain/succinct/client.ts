@@ -332,8 +332,23 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
   const requestId = await requestProofWithNonceRetry(opts.wallet, buildBody, nonce, fetchImpl)
 
   opts.onStage?.('proving')
+  opts.onProgress?.({ requestId: bytesToHex(requestId), fulfillmentStatus: 'requested' })
+  return waitForProof(requestId, { deadline, onProgress: opts.onProgress, pollMs: opts.pollMs, fetchImpl })
+}
+
+export interface WaitForProofOptions {
+  /** Unix seconds after which an unfulfilled request is given up on. Unset: wait as long as the network says it's live. */
+  deadline?: bigint | number
+  onProgress?: (progress: ProofRequestProgress) => void
+  /** How often to poll GetProofRequestStatus. Default 5s. */
+  pollMs?: number
+  fetchImpl?: typeof fetch
+}
+
+/** Polls a request until it's fulfilled, then downloads and decodes its Groth16 proof. Needs no signature. */
+export async function waitForProof(requestId: Uint8Array, opts: WaitForProofOptions = {}): Promise<DecodedGroth16Proof> {
+  const fetchImpl = opts.fetchImpl ?? fetch
   const requestIdHex = bytesToHex(requestId)
-  opts.onProgress?.({ requestId: requestIdHex, fulfillmentStatus: 'requested' })
   const pollMs = opts.pollMs ?? 5000
   for (;;) {
     const status = await getProofRequestStatus(requestId, fetchImpl)
@@ -346,7 +361,9 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
     if (status.fulfillmentStatus === FULFILLMENT_STATUS_UNFULFILLABLE) {
       throw new BridgeError('Unknown', 'the proof request became unfulfillable')
     }
-    if (nowSecs() > deadline) throw new BridgeError('Unknown', 'the proof request passed its deadline without being fulfilled')
+    if (opts.deadline !== undefined && nowSecs() > BigInt(opts.deadline)) {
+      throw new BridgeError('Unknown', 'the proof request passed its deadline without being fulfilled')
+    }
     await sleep(pollMs)
   }
 }

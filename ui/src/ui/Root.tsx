@@ -34,8 +34,10 @@ function RouteView({ route }: { route: Route }) {
   switch (route.name) {
     case 'bridge':
       return <BridgeView />
+    case 'crossing':
+      return <KidsView key={`crossing/${route.address ?? ''}`} mode="crossing" address={route.address} />
     case 'kids':
-      return <KidsView key={route.address ?? ''} address={route.address} />
+      return <KidsView key={route.address ?? ''} mode="home" address={route.address} />
     case 'kid':
       return <KidView key={route.id} id={route.id} />
     case 'about':

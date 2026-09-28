@@ -136,9 +136,9 @@ test('stuck prover: after 30 minutes proving, a calm note, and the README second
 test('About lists the contracts from the deployment, with live health', async ({ page }) => {
   await page.goto(`${DEMO}#/about`)
   const contracts = page.locator('dl.addrs')
-  await expect(contracts.getByRole('link', { name: 'cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv' })).toHaveAttribute(
+  await expect(contracts.getByRole('link', { name: 'cosmos1rce3kmvc2v955f64gp8cjtwqzma3qg8t4puk7swmqd56j25gfqgq3s8037' })).toHaveAttribute(
     'href',
-    'https://www.mintscan.io/cosmos/wasm/contract/cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv',
+    'https://www.mintscan.io/cosmos/wasm/contract/cosmos1rce3kmvc2v955f64gp8cjtwqzma3qg8t4puk7swmqd56j25gfqgq3s8037',
   )
   await expect(contracts.getByRole('link', { name: BRIDGE })).toHaveAttribute('href', `https://etherscan.io/address/${BRIDGE}`)
   await expect(contracts.getByRole('link', { name: '0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9' })).toBeVisible()

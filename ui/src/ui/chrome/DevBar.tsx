@@ -6,7 +6,8 @@ import './DevBar.css'
 
 const JUMPS: readonly { label: string; route: Route }[] = [
   { label: 'bridge', route: { name: 'bridge' } },
-  { label: 'my kids', route: { name: 'kids' } },
+  { label: 'crossing', route: { name: 'crossing' } },
+  { label: 'my eth kids', route: { name: 'kids' } },
   { label: 'kid #8783', route: { name: 'kid', id: 8783 } },
   { label: 'about', route: { name: 'about' } },
 ]

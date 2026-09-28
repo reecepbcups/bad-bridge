@@ -13,7 +13,7 @@ export const DEMO_HUB = 'cosmos1q8m9275lcn5suv6c0k3v0mq3x639zqcq363fxl'
 export const DEMO_ETH = '0x8f3a41b7e2D09C6A5E1f7b3C2d9A0e4f6b8Cc21d'
 export const OTHER_HUB = 'cosmos1qa3t6xrnec5cfhe6jhcyhfsptjm3ymwg6vlqk8'
 export const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
-export const BRIDGE = '0xDe185D7902340086cc4C37322584e246DC5eE198'
+export const BRIDGE = '0xdDef181a0b9F5A090830F9ccBE5Ffb0D2BA07A7e'
 
 export const VIEWPORTS = [
   { width: 375, height: 812 },

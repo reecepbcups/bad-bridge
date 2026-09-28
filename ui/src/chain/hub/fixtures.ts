@@ -5,7 +5,7 @@ import type { ChainEvent } from './events'
 
 export const REECE = 'cosmos1reece3m8g4m3d0qrpj93rnnseudnpzhrey64rr'
 export const CW721 = 'cosmos158d2rz0aw8cxx86j0tl8gfwleqyqefr9xdgth2jdfse2d9uumltsu83rfr'
-export const ESCROW = 'cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv'
+export const ESCROW = 'cosmos1rce3kmvc2v955f64gp8cjtwqzma3qg8t4puk7swmqd56j25gfqgq3s8037'
 export const RECIPIENT_HEX = 'd2c392084761cb6e44c544b6f39dcc001fde9775'
 export const RECIPIENT = '0xD2C392084761cb6E44c544B6f39dcc001fDe9775'
 /** Mainnet tx that bridged ReeceBadTest #2. */

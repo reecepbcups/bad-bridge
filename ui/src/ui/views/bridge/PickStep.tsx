@@ -80,7 +80,7 @@ function CrossingNudge() {
   const parts = [crossing > 0 && `${crossing} ${kidWord(crossing)} crossing`, ready > 0 && `${ready} ready to claim`].filter(Boolean)
   return (
     <p className="note nudge">
-      {parts.join(' · ')} <a href="#/kids">→ track them</a>
+      {parts.join(' · ')} <a href="#/crossing">→ track them</a>
     </p>
   )
 }
@@ -93,7 +93,7 @@ function KidPicker() {
   const [query, setQuery] = useState('')
   const findId = useId()
 
-  // only kids actually on the Hub belong here; ones already sent (crossing, ready, or claimed) live in "My kids"
+  // only kids actually on the Hub belong here; ones already sent (crossing, ready, or claimed) live in Crossing and "My Eth kids"
   const kids = owned.data?.filter((t) => t.stage === 'home-hub')
   const pickable = new Set((kids ?? []).map((t) => t.tokenId))
   // a picked kid that left (sent from elsewhere) drops out of the pick

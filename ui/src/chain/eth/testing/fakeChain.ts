@@ -17,11 +17,11 @@ import {
 } from 'viem'
 import { bridgeAbi, lightClientAbi, multicall3WriteAbi, routerAbi } from '../abi'
 
-export const BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
+export const BRIDGE: Address = '0xdDef181a0b9F5A090830F9ccBE5Ffb0D2BA07A7e'
 export const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
 export const LIGHT_CLIENT: Address = '0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9'
 export const ROUTER: Address = '0x3aF134307D5Ee90faa2ba9Cdba14ba66414CF1A7'
-export const ESCROW: Hex = '0x10cf6f62e7c951ef8308c35e1cf6df956249b331e4181b798cd45d02158d1f50'
+export const ESCROW: Hex = '0x1e331b6d98530b4a2755404f892dc016fb1020eba8796f41db0369a92a884810'
 export const ALICE: Address = getAddress('0xd2c392084761cb6e44c544b6f39dcc001fde9775')
 export const BOB: Address = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 /** The estimate eth_estimateGas answers with. */

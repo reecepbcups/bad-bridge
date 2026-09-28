@@ -95,7 +95,7 @@ test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, don
   await expect(steps.locator('[aria-current="step"]')).toContainText('Cross')
   await expect(page.getByText('Right now Ethereum is about 10 min behind the Hub.', { exact: false })).toBeVisible()
   await expect(page.locator('a[href^="https://www.mintscan.io/cosmos/tx/"]').first()).toBeVisible()
-  await expect(page.getByText(/\d+ blocks to go\./)).toBeVisible()
+  await expect(page.getByText(/Ethereum client is behind \d+ blocks\./)).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: 'My kids' })).toHaveAttribute('href', `#/kids/${DEMO_ETH}`)
   await expect(page.getByRole('img', { name: /Your 2 kids on the bridge.*waiting for Ethereum to catch up/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Copy a link to check later' })).toBeVisible()
