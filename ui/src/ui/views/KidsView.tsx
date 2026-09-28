@@ -8,23 +8,27 @@ import { CLAIM_BATCH_CAP, ClaimButton, claimingHint, useClaimFlow, type ClaimFlo
 import { Card } from '../chrome/Card'
 import { ErrorNote } from '../ErrorNote'
 import { ExtLink } from '../ExtLink'
-import { dateTime, kidWord, shortAddress, timeAgo } from '../format'
+import { blockNumber, dateTime, kidWord, shortAddress, timeAgo } from '../format'
 import { useFocusWhenDone, useHubNow } from '../hooks'
 import { KidArt, KidDoodle } from '../KidArt'
 import { parseLookup, type Lookup } from '../lookup'
-import { ProveBalanceNote, ProveButton, ProveFailure, ProveProgress, useProveFlow, type ProveFlow } from '../ProveKid'
+import { ProveBalanceNote, ProveButton, ProveFailure, ProveProgress, ResumeProof, useProveFlow, type ProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { SpeedUp } from '../SpeedUp'
+import { Scene } from '../Scene'
 import { StageList, TrackBar } from '../StageList'
-import { inFlight, STAGE_LINE, STAGE_PILL } from '../stages'
+import { inFlight, slowestStage, STAGE_LINE, STAGE_PILL } from '../stages'
 import { SwitchChain } from '../SwitchChain'
 import { useTitle } from '../useTitle'
 import './tracker.css'
 
-// The tracker: every kid headed to an address (or sent by one), wherever it is on the bridge.
-// #/kids uses the connected wallets plus kids this browser sent; #/kids/<address> looks one address up.
+// Two tabs off one list of kids headed to an address (or sent by one).
+// Crossing: everything still on the bridge, with the Ethereum client progress. My Eth kids: the ones home on Ethereum.
+// #/crossing and #/kids use the connected wallets plus kids this browser sent; add /<address> to look one address up.
 
-export function KidsView({ address }: { address?: string }) {
+export type KidsMode = 'crossing' | 'home'
+
+export function KidsView({ address, mode }: { address?: string; mode: KidsMode }) {
   const { deployment, hubWallet, ethWallet } = useBridge()
   const remembered = useRememberedTrips()
   const connectedEth = ethWallet.status === 'connected' ? ethWallet.address : undefined
@@ -39,10 +43,10 @@ export function KidsView({ address }: { address?: string }) {
         : {}
     : { eth: connectedEth, hub: connectedHub, ids: remembered.length > 0 ? remembered : undefined }
   const active = Boolean(query.eth || query.hub || query.ids?.length)
-  const trips = useTrips(query)
+  const trips = useTrips(query, { live: mode === 'crossing' })
   const health = useHealth()
   const flow = useClaimFlow()
-  const prove = useProveFlow()
+  const prove = useProveFlow(() => trips.refetch())
   // kids claimed from this page, kept here: a claim can re-key the list and remount its rows
   const [claimed, setClaimed] = useState<readonly KidId[]>([])
   const claim: ClaimFlow = {
@@ -57,35 +61,51 @@ export function KidsView({ address }: { address?: string }) {
   const mine = !target || [connectedEth, connectedHub].some((a) => a?.toLowerCase() === target.toLowerCase())
   const shareAddress = target ?? connectedEth ?? connectedHub
 
-  const list = trips.data ?? []
+  const all = trips.data ?? []
+  const onBridge = all.filter((t) => t.stage !== 'home-eth' && t.stage !== 'home-hub')
+  const list = mode === 'crossing' ? onBridge : all.filter((t) => t.stage === 'home-eth')
   const ready = list.filter((t) => t.stage === 'ready')
   const claimableNow = ready.slice(0, CLAIM_BATCH_CAP)
-  const home = list.filter((t) => t.stage === 'home-eth').length
   const crossingTrips = list.filter((t) => inFlight(t.stage))
   const crossing = crossingTrips.length
   // kids in one send usually share a recipient; if they don't, this speeds up whichever one's address it is
   const crossingRecipient = crossingTrips.find((t) => t.recipient)?.recipient ?? null
-  // Nudging only helps a kid Ethereum's light client hasn't caught up to yet. Once every crossing kid is at
-  // `proving`, it's already caught up for all of them — a nudge here couldn't move anything faster.
+  // the group moves at its slowest kid's pace
+  const groupStage = slowestStage(crossingTrips)
+  const lead = crossingTrips.find((t) => t.stage === groupStage)
+  const groupFacts = lead && {
+    ...lead,
+    stuck: crossingTrips.some((t) => t.stuck && t.stage === lead.stage),
+  }
+  // Nudging only helps until Ethereum's light client has caught up. Past `proving` it's already caught up.
   const nudgeHelps = crossingTrips.some((t) => t.stage !== 'proving')
   const provingTrips = list.filter((t) => t.stage === 'proving')
   // one proof/one submitBatch tx covers however many records are in it, at close to the cost of one
   const provingRecipients = new Map(provingTrips.filter((t) => t.recipient).map((t) => [t.tokenId, t.recipient as EthAddress]))
-  const title = mine ? 'My kids' : `Kids for ${shortAddress(target ?? '')}`
+  const crossingView = mode === 'crossing'
+  const title = crossingView
+    ? mine
+      ? 'Crossing'
+      : `Crossing for ${shortAddress(target ?? '')}`
+    : mine
+      ? 'My Eth kids'
+      : `Eth kids for ${shortAddress(target ?? '')}`
   useTitle(title)
 
   return (
     <Card>
       <h2 tabIndex={-1}>{title}</h2>
       <p className="lede">
-        {lookup?.kind === 'hub'
-          ? 'Every kid this Hub address sent, wherever it is on the bridge.'
-          : mine
-            ? 'Every kid headed to your Ethereum address, wherever it is on the bridge.'
-            : 'Every kid headed to this Ethereum address, wherever it is on the bridge.'}
+        {crossingView
+          ? 'Kids on their way to Ethereum. Close this tab if you like, they will be waiting here.'
+          : lookup?.kind === 'hub'
+            ? 'Every kid this Hub address sent that is home on Ethereum.'
+            : mine
+              ? 'Every kid of yours that is home on Ethereum.'
+              : 'Every kid home on Ethereum at this address.'}
       </p>
       {/* key remounts the box when the known identity changes (e.g. lazy wallet connect), so it picks up the new initial value */}
-      <LookupBox key={address ?? connectedEth ?? ''} initial={address ?? connectedEth ?? ''} />
+      <LookupBox key={address ?? connectedEth ?? ''} initial={address ?? connectedEth ?? ''} mode={mode} />
 
       {lookup?.kind === 'bad' && (
         <p className="hint bad" role="alert">
@@ -112,12 +132,18 @@ export function KidsView({ address }: { address?: string }) {
         <div className="empty">
           <KidDoodle id={5} />
           <div>
-            <b>No kids on the bridge {lookup ? 'for this address' : 'yet'}</b>
+            <b>{crossingView ? 'Nothing crossing' : 'No kids home on Ethereum'} {lookup ? 'for this address' : 'yet'}</b>
             <span>
               {mine ? (
-                <>
-                  Nothing headed here yet. Send one from <a href="#/">Bridge a kid</a>.
-                </>
+                crossingView ? (
+                  <>
+                    Send one from <a href="#/">Bridge a kid</a>.
+                  </>
+                ) : (
+                  <>
+                    Nothing home yet. Send one from <a href="#/">Bridge a kid</a>.
+                  </>
+                )
               ) : (
                 'Nothing has been sent to or from this address.'
               )}
@@ -126,13 +152,38 @@ export function KidsView({ address }: { address?: string }) {
         </div>
       )}
 
+      {!crossingView && onBridge.length > 0 && (
+        <p className="note nudge">
+          {onBridge.length} {kidWord(onBridge.length)} crossing{' '}
+          <a className="btn ghost small" href={href({ name: 'crossing', address })}>
+            See crossing
+          </a>
+        </p>
+      )}
+
+      {crossingView && groupFacts && crossingRecipient && (
+        <>
+          <Scene ids={crossingTrips.map((t) => t.tokenId)} stage={groupFacts.stage} />
+          <StageList
+            facts={groupFacts}
+            health={health.data}
+            kids={crossing}
+            speedUp={nudgeHelps && <SpeedUp recipient={crossingRecipient} n={crossing} />}
+          />
+          {health.data && (
+            <p className="muted mono heights">
+              Hub block {blockNumber(health.data.hubHeight)} · Ethereum has seen {blockNumber(health.data.clientHeight)}
+            </p>
+          )}
+        </>
+      )}
+
       {list.length > 0 && (
         <>
           <div className="row">
             <div className="summary">
               {crossing > 0 && <span className="pill crossing">{crossing} crossing</span>}
               {ready.length > 0 && <span className="pill ready">{ready.length} ready</span>}
-              {home > 0 && <span className="pill home">{home} home</span>}
             </div>
             {ready.length > 1 && (
               <ClaimButton ids={claimableNow.map((t) => t.tokenId)} flow={claim}>
@@ -151,15 +202,6 @@ export function KidsView({ address }: { address?: string }) {
             )}
           </div>
           {!deployment.demo && provingTrips.length > 0 && <ProveBalanceNote />}
-          {crossing > 0 && crossingRecipient && (
-            <SpeedUp
-              recipient={crossingRecipient}
-              n={crossing}
-              disabledReason={
-                nudgeHelps ? undefined : `Ethereum already caught up to every ${kidWord(crossing)} here. A nudge wouldn't speed anything up.`
-              }
-            />
-          )}
           {ready.length > 0 && ethWallet.wrongChain && <SwitchChain />}
           {ready.length > 0 && !ethWallet.wrongChain && ethWallet.status !== 'connected' && (
             <p className="hint">Connect an Ethereum wallet to claim. Anyone can claim: kids always land at the address they were sent to.</p>
@@ -174,10 +216,19 @@ export function KidsView({ address }: { address?: string }) {
           )}
           <ProveProgress flow={prove} />
           <ProveFailure flow={prove} />
+          {!deployment.demo && crossingView && provingTrips.length > 0 && <ResumeProof onProved={trips.refetch} />}
           {trips.error && <ErrorNote error={trips.error} action="read" onRetry={trips.refetch} live={false} />}
           <ul className="list" aria-label="Kids on the bridge">
             {list.map((t) => (
-              <TripRow key={t.tokenId} trip={t} health={health.data} claim={claim} prove={prove} claimedHere={claimed.includes(t.tokenId)} />
+              <TripRow
+                key={t.tokenId}
+                trip={t}
+                health={health.data}
+                claim={claim}
+                prove={prove}
+                claimedHere={claimed.includes(t.tokenId)}
+                showStages={!crossingView}
+              />
             ))}
           </ul>
           {/* always in the page, so screen readers hear each change */}
@@ -191,7 +242,7 @@ export function KidsView({ address }: { address?: string }) {
         <p className="note">
           {foundBy(lookup, mine, connectedEth, connectedHub)} Checks again every {Math.round(POLL_MS / 1000)} seconds.
         </p>
-        {shareAddress && <ShareLink hash={href({ name: 'kids', address: shareAddress })} />}
+        {shareAddress && <ShareLink hash={href({ name: crossingView ? 'crossing' : 'kids', address: shareAddress })} />}
       </div>
     </Card>
   )
@@ -208,7 +259,7 @@ function foundBy(lookup: Lookup | null, mine: boolean, eth: string | undefined, 
   return 'Kids sent from this browser. Look up an address to see them from any device.'
 }
 
-function LookupBox({ initial }: { initial: string }) {
+function LookupBox({ initial, mode }: { initial: string; mode: KidsMode }) {
   const { deployment } = useBridge()
   const [value, setValue] = useState(initial)
   const [error, setError] = useState<string | null>(null)
@@ -223,7 +274,11 @@ function LookupBox({ initial }: { initial: string }) {
         const parsed = parseLookup(value, deployment.hub.bech32Prefix, deployment.collectionSize)
         if (parsed.kind === 'bad') return setError(parsed.message)
         setError(null)
-        navigate(parsed.kind === 'kid' ? { name: 'kid', id: parsed.id } : { name: 'kids', address: parsed.address })
+        navigate(
+          parsed.kind === 'kid'
+            ? { name: 'kid', id: parsed.id }
+            : { name: mode === 'crossing' ? 'crossing' : 'kids', address: parsed.address },
+        )
       }}
     >
       <label className="hint full" htmlFor={inputId}>
@@ -281,6 +336,7 @@ export function TripRow({
   claim,
   prove,
   claimedHere = false,
+  showStages = true,
 }: {
   trip: Trip
   health: Health | undefined
@@ -288,6 +344,8 @@ export function TripRow({
   prove: ProveFlow
   /** Claimed from this page: when it lands, its Claim button goes away, so focus moves to the kid. */
   claimedHere?: boolean
+  /** Off where the page already shows the stage list for the whole group. */
+  showStages?: boolean
 }) {
   const { deployment } = useBridge()
   const hubNow = useHubNow()
@@ -331,7 +389,7 @@ export function TripRow({
         <TrackBar stage={trip.stage} />
         <div className="meta">{line}</div>
       </div>
-      {inFlight(trip.stage) && (
+      {showStages && inFlight(trip.stage) && (
         <details>
           <summary>What's happening?</summary>
           <StageList facts={trip} health={health} />

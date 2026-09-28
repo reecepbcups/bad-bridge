@@ -50,5 +50,5 @@ export const TRIPS: readonly SeedTrip[] = [
 /** Addresses isContract() reports as contracts, to exercise the contract-recipient warning. */
 export const CONTRACTS: readonly EthAddress[] = [
   '0xcA11bde05977b3631167028862bE2a173976CA11',
-  '0xDe185D7902340086cc4C37322584e246DC5eE198',
+  '0xdDef181a0b9F5A090830F9ccBE5Ffb0D2BA07A7e',
 ]

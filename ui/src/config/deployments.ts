@@ -126,17 +126,17 @@ function eth(bridge: Address | null): EthConfig {
 
 const SOURCE = 'https://github.com/reecepbcups/bad-bridge'
 
-const REECE_TEST_BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
+const REECE_TEST_BRIDGE: Address = '0xdDef181a0b9F5A090830F9ccBE5Ffb0D2BA07A7e'
 
 /** Mainnet test collection. Minted up to #18 as of 2026-09-28 (cw721 num_tokens/all_tokens, verified live); grows as more get minted for testing. */
 const reeceTest: Deployment = {
   id: 'reece-test',
-  collectionName: 'ReeceBadTest',
+  collectionName: 'ReeceBadTestTwo',
   collectionSize: 18,
   demo: false,
   hub: hub(
     'cosmos158d2rz0aw8cxx86j0tl8gfwleqyqefr9xdgth2jdfse2d9uumltsu83rfr',
-    'cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv',
+    'cosmos1rce3kmvc2v955f64gp8cjtwqzma3qg8t4puk7swmqd56j25gfqgq3s8037',
   ),
   eth: eth(REECE_TEST_BRIDGE),
   explorer: explorers(REECE_TEST_BRIDGE),

@@ -23,7 +23,7 @@ import { simulationTxBytes } from './writer'
 
 // From mainnet tx 0C72F725E53CD2B4EB6159EA0FF2C0C85DA1B9189FD84BA28DEA6F0071BAC2E5, which bridged ReeceBadTest #2.
 const GOLDEN =
-  '{"send_nft":{"contract":"cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv","token_id":"2","msg":"0sOSCEdhy25ExUS2853MAB/el3U="}}'
+  '{"send_nft":{"contract":"cosmos1rce3kmvc2v955f64gp8cjtwqzma3qg8t4puk7swmqd56j25gfqgq3s8037","token_id":"2","msg":"0sOSCEdhy25ExUS2853MAB/el3U="}}'
 const GOLDEN_RECIPIENT = '0xd2c392084761cb6e44c544b6f39dcc001fde9775'
 
 function codeOf(fn: () => unknown): BridgeErrorCode | 'no error' {

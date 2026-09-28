@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useBridge } from '../chain/context'
 import type { ProveStage } from '../chain/prove'
 import type { ProofRequestProgress } from '../chain/succinct/client'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
+import type { Hex } from 'viem'
 import { ConnectButton } from './Connect'
 import { ErrorNote } from './ErrorNote'
 import { ExtLink } from './ExtLink'
@@ -71,7 +72,8 @@ const STAGE_LABEL: Readonly<Record<ProveStage, string>> = {
   confirming: 'Submitting…',
 }
 
-export function useProveFlow(): ProveFlow {
+/** `onProved` runs after a batch lands, so the page can re-read where the kids are now. */
+export function useProveFlow(onProved?: () => void): ProveFlow {
   const { proveKid } = useBridge()
   const toast = useToast()
   const [proving, setProving] = useState<readonly KidId[]>([])
@@ -88,6 +90,7 @@ export function useProveFlow(): ProveFlow {
     try {
       const result = await proveKid.proveKids(ids, { expectedRecipients, onStage: setStage, onProgress: setRequest })
       toast(provenToast(result.proved))
+      onProved?.()
     } catch (e) {
       setFailure({ error: e as BridgeError, ids })
     } finally {
@@ -97,6 +100,99 @@ export function useProveFlow(): ProveFlow {
     }
   }
   return { run, pending: proving.length > 0, proving, stage, request, failure }
+}
+
+const REQUEST_ID_RE = /0x[0-9a-fA-F]{64}/
+
+/** Pulls a request id out of whatever was pasted: the bare id, or Succinct's explorer URL for it. */
+export function parseRequestId(input: string): Hex | null {
+  const m = REQUEST_ID_RE.exec(input)
+  return m ? (m[0].toLowerCase() as Hex) : null
+}
+
+/**
+ * For a proof that was requested but never submitted (e.g. the page was reloaded while proving): paste its
+ * Succinct request id and this waits for it, then submits it. Hub height is only needed when Ethereum's client
+ * has moved on since the proof was made.
+ */
+export function ResumeProof({ onProved }: { onProved?: () => void }) {
+  const { proveKid } = useBridge()
+  const toast = useToast()
+  const idInput = useId()
+  const heightInput = useId()
+  const [value, setValue] = useState('')
+  const [height, setHeight] = useState('')
+  const [stage, setStage] = useState<ProveStage | null>(null)
+  const [request, setRequest] = useState<ProofRequestProgress | null>(null)
+  const [error, setError] = useState<BridgeError | null>(null)
+  const [pending, setPending] = useState(false)
+  if (!proveKid) return null
+
+  const requestId = parseRequestId(value)
+  const heightNum = height.trim() === '' ? undefined : /^\d+$/.test(height.trim()) ? BigInt(height.trim()) : null
+  const bad = value.trim() !== '' && !requestId
+  const onSubmit = async () => {
+    if (!requestId || heightNum === null || pending) return
+    setPending(true)
+    setError(null)
+    setRequest(null)
+    try {
+      const { txHash } = await proveKid.submitRequest(requestId, { height: heightNum, onStage: setStage, onProgress: setRequest })
+      toast({ tone: 'ok', title: 'Proof submitted', body: `The proof landed on Ethereum (${txHash.slice(0, 10)}…). Ready kids can be claimed now.` })
+      setValue('')
+      onProved?.()
+    } catch (e) {
+      setError(e as BridgeError)
+    } finally {
+      setPending(false)
+      setStage(null)
+    }
+  }
+  return (
+    <details className="hint">
+      <summary>Advanced: submit a proof you already requested</summary>
+      <div className="lookup">
+        <label className="hint full" htmlFor={idInput}>
+          Succinct request id or explorer link
+        </label>
+        <input
+          id={idInput}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="0x… or https://explorer.succinct.xyz/request/0x…"
+          aria-invalid={bad}
+        />
+        <label className="hint full" htmlFor={heightInput}>
+          Hub height (optional, only if Ethereum's client has moved past it)
+        </label>
+        <input id={heightInput} type="text" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value)} autoComplete="off" />
+        <button
+          type="button"
+          className="btn eth ghost"
+          disabled={!requestId || heightNum === null}
+          aria-disabled={pending || undefined}
+          onClick={() => void onSubmit()}
+        >
+          {pending && stage ? STAGE_LABEL[stage] : 'Submit this proof'}
+        </button>
+      </div>
+      {bad && (
+        <p className="hint bad" role="alert">
+          That doesn't look like a request id. It's 0x followed by 64 hex characters.
+        </p>
+      )}
+      {pending && request && (
+        <p className="hint">
+          {REQUEST_STATUS_LABEL[request.fulfillmentStatus]}.{' '}
+          <ExtLink href={`${PROVE_REQUEST_URL}/${request.requestId}`}>Watch on Succinct</ExtLink>
+        </p>
+      )}
+      {error && <ErrorNote error={error} action="prove" />}
+    </details>
+  )
 }
 
 /**

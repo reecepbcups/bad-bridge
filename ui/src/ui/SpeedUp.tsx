@@ -1,9 +1,11 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useBridge } from '../chain/context'
 import type { EthAddress, SendStage } from '../chain/types'
 import { useNudge } from '../trips/hooks'
 import { ConnectButton } from './Connect'
 import { ErrorNote } from './ErrorNote'
+import { ExtLink } from './ExtLink'
 import { errorCopy } from './errors'
 import { kidWord } from './format'
 import { useToast } from './Toasts'
@@ -19,6 +21,29 @@ const NUDGE_LABEL: Readonly<Record<SendStage, (wallet: string) => string>> = {
 /** Skip Go's tracker: relay/ack status for an IBC transfer, not just whether the Hub tx landed. */
 function skipExplorerUrl(chainId: string, txHash: string): string {
   return `https://explorer.skip.build/?tx_hash=${txHash}&chain_id=${chainId}`
+}
+
+const SKIP_POLL_MS = 5_000
+
+/** Skip Go's relay state for the transfer, polled until it settles. */
+function useSkipState(chainId: string, txHash: string | null, enabled: boolean): string | null {
+  const q = useQuery({
+    queryKey: ['skip-tx-status', chainId, txHash],
+    enabled: enabled && txHash !== null,
+    queryFn: async () => {
+      const res = await fetch(`https://api.skip.build/v2/tx/status?tx_hash=${txHash}&chain_id=${chainId}`)
+      if (!res.ok) throw new Error(`skip status ${res.status}`)
+      const body = (await res.json()) as { state?: string }
+      return body.state ?? null
+    },
+    refetchInterval: (query) => (settled(query.state.data ?? null) ? false : SKIP_POLL_MS),
+  })
+  return q.data ?? null
+}
+
+/** Success or error both mean the packet was handled, so the client got its update. */
+function settled(state: string | null): boolean {
+  return state !== null && state.includes('COMPLETED')
 }
 
 /**
@@ -40,9 +65,11 @@ export function SpeedUp({
   const { deployment, hubWallet } = useBridge()
   const toast = useToast()
   const [reached, setReached] = useState<SendStage | null>(null)
+  const [sentTx, setSentTx] = useState<string | null>(null)
   const nudge = useNudge({ onStage: setReached })
   const sending = nudge.status === 'pending'
   const walletName = hubWallet.walletName ?? 'your wallet'
+  const skipState = useSkipState(deployment.hub.chainId, sentTx, !deployment.demo)
   const stage: SendStage | null = sending ? (nudge.stage ?? 'simulating') : null
 
   if (disabledReason) {
@@ -73,6 +100,7 @@ export function SpeedUp({
     setReached(null)
     try {
       const result = await nudge.run(recipient)
+      setSentTx(result.txHash)
       toast({
         tone: 'ok',
         title: 'Sent a speed-up transfer',
@@ -97,6 +125,14 @@ export function SpeedUp({
         guarantees.
         {/* COPY: speed-up hint */}
       </p>
+      {sentTx && (
+        <p className="hint" role="status">
+          <ExtLink href={skipExplorerUrl(deployment.hub.chainId, sentTx)}>Track it on Skip Go</ExtLink> ·{' '}
+          {settled(skipState)
+            ? "Relayed. Ethereum's client got its update."
+            : 'Waiting for a relayer. Success or failure both mean the client updated.'}
+        </p>
+      )}
       {nudge.error && (
         <>
           <ErrorNote error={nudge.error} action="send" walletName={hubWallet.walletName} onRetry={() => void onNudge()} retryLabel="Try again" />

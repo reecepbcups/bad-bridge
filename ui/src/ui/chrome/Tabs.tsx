@@ -3,17 +3,18 @@ import type { RouteName } from '../../router'
 import { useTrips } from '../../trips/hooks'
 import './Tabs.css'
 
-export type Tab = 'bridge' | 'kids' | 'about'
+export type Tab = 'bridge' | 'crossing' | 'kids' | 'about'
 
 export function tabOf(route: RouteName): Tab | null {
-  if (route === 'bridge' || route === 'about') return route
+  if (route === 'bridge' || route === 'crossing' || route === 'about') return route
   if (route === 'kids' || route === 'kid') return 'kids'
   return null
 }
 
 const TABS: readonly { tab: Tab; href: string; label: string }[] = [
   { tab: 'bridge', href: '#/', label: 'Bridge a kid' },
-  { tab: 'kids', href: '#/kids', label: 'My kids' },
+  { tab: 'crossing', href: '#/crossing', label: 'Crossing' },
+  { tab: 'kids', href: '#/kids', label: 'My Eth kids' },
   { tab: 'about', href: '#/about', label: 'About' },
 ]
 
@@ -29,7 +30,7 @@ export function TabLinks({ current, moving = 0 }: { current: Tab | null; moving?
       {TABS.map(({ tab, href, label }) => (
         <a key={tab} className="tab" href={href} aria-current={tab === current ? 'page' : undefined}>
           {label}
-          {tab === 'kids' && moving > 0 && (
+          {tab === 'crossing' && moving > 0 && (
             <span className="badge">
               {moving}
               <span className="sr-only"> on the way</span>

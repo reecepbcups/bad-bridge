@@ -8,7 +8,7 @@
 // so cosmjs-types and the zstd WASM module never load in the demo bundle.
 
 import { fromBase64 } from '@cosmjs/encoding'
-import { bytesToHex, type Hex } from 'viem'
+import { bytesToHex, hexToBytes, type Hex } from 'viem'
 import { readContract } from 'viem/actions'
 import type { Deployment } from '../config/deployments'
 import { bridgeAbi, lightClientAbi } from './eth/abi'
@@ -18,7 +18,7 @@ import type { EthWriterWithBatch } from './eth/writer'
 import { escrowRaw, proofHeader, proveAt, storeKey } from './hub/prove'
 import { encodeSp1Stdin, stdinChunks, type StdinRecord } from './hub/stdin'
 import { createTransport } from './hub/transport'
-import { getProveBalance, type ProofRequestProgress, type SuccinctStage } from './succinct/client'
+import { getProveBalance, waitForProof, type ProofRequestProgress, type SuccinctStage } from './succinct/client'
 import { BridgeError, type EthAddress, type KidId } from './types'
 
 export type ProveStage = 'finding-proof' | SuccinctStage | 'signing' | 'confirming'
@@ -74,6 +74,13 @@ export interface ProveKidsResult {
   proved: KidId[]
 }
 
+export interface SubmitRequestOptions {
+  onStage?: (stage: ProveStage) => void
+  onProgress?: (progress: ProofRequestProgress) => void
+  /** Hub height the proof was made at. Defaults to the light client's latest, which is what proveKids uses. */
+  height?: bigint
+}
+
 export interface ProveKidResult {
   txHash: Hex
 }
@@ -82,6 +89,11 @@ export interface ProveKidWriter {
   proveKid(id: KidId, options?: ProveKidOptions): Promise<ProveKidResult>
   /** Proves any number of the wallet's own pending kids in one batch: one proof, one submitBatch tx. */
   proveKids(ids: readonly KidId[], options?: ProveKidsOptions): Promise<ProveKidsResult>
+  /**
+   * Picks up a Succinct request that was started earlier (e.g. before a reload): waits for it to be fulfilled,
+   * then submitBatch it. Needs the wallet only for the final Ethereum tx.
+   */
+  submitRequest(requestId: Hex, options?: SubmitRequestOptions): Promise<{ txHash: Hex }>
   /**
    * The connected wallet's PROVE balance deposited on Succinct's network — what RequestProof actually draws
    * from, not the wallet's ERC20 PROVE balance (a separate, unrelated number). Wei-like base units (18
@@ -146,6 +158,32 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     return { txHash, proved: records.map((r) => r.id) }
   }
 
+  async function submitRequest(requestId: Hex, options?: SubmitRequestOptions): Promise<{ txHash: Hex }> {
+    const onStage = options?.onStage
+    const bridge = requireBridge(deployment)
+    onStage?.('proving')
+    const decoded = await waitForProof(hexToBytes(requestId), { onProgress: options?.onProgress })
+
+    onStage?.('finding-proof')
+    const lightClient = await readContract(publicClient, { address: bridge, abi: bridgeAbi, functionName: 'lightClient' })
+    const vkHash = await readContract(publicClient, { address: lightClient, abi: lightClientAbi, functionName: 'MEMBERSHIP_PROGRAM_VKEY' })
+    let height = options?.height
+    if (height === undefined) {
+      const [, , latestHeight, , , isFrozen] = await readContract(publicClient, { address: lightClient, abi: lightClientAbi, functionName: 'clientState' })
+      if (isFrozen) throw new BridgeError('ClientFrozen', "Ethereum's light client of the Hub is frozen")
+      height = latestHeight.revisionHeight
+    }
+    const header = await proofHeader(hubTransport, Number(height))
+    // the proof commits to the Hub's app hash, so a wrong height shows up here instead of as an on-chain revert
+    if (!decoded.publicValues.toLowerCase().includes(bytesToHex(header.appHash).slice(2).toLowerCase())) {
+      throw new BridgeError('Unknown', `this proof wasn't made at Hub height ${height}. Enter the height it was proven at.`)
+    }
+    const cs = { timestamp: header.timestampNs, root: bytesToHex(header.appHash), nextValidatorsHash: bytesToHex(header.nextValidatorsHash) }
+    const sp1Proof = { vKey: vkHash, publicValues: decoded.publicValues, proof: decoded.proofBytes }
+    const { txHash } = await ethWriter.submitBatch(height, cs, sp1Proof, { onStage })
+    return { txHash }
+  }
+
   async function proveKid(id: KidId, options?: ProveKidOptions): Promise<ProveKidResult> {
     const { txHash } = await proveKids([id], {
       onStage: options?.onStage,
@@ -160,5 +198,5 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     await ethWriter.registerProgram(MEMBERSHIP_NETWORK_VK_HASH, fromBase64(MEMBERSHIP_VK_BASE64), elf)
   }
 
-  return { proveKid, proveKids, proveBalance: () => getProveBalance(ethWriter.address), registerProgram }
+  return { proveKid, proveKids, submitRequest, proveBalance: () => getProveBalance(ethWriter.address), registerProgram }
 }

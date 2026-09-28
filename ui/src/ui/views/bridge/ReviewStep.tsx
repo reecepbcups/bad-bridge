@@ -5,6 +5,7 @@ import { recipientMsg } from '../../../chain/encode-recipient'
 import { checkRecipient, type RecipientCheck } from '../../../chain/eth/recipient'
 import { MAX_KIDS_PER_SEND, type EthAddress, type KidId, type SendStage } from '../../../chain/types'
 import { sharedHost } from '../../../config/host'
+import { navigate } from '../../../router'
 import { useConfigSanity, useHealth, useSendEstimate, useSendKids } from '../../../trips/hooks'
 import { ConnectButton } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
@@ -53,7 +54,7 @@ export function chunkAddress(address: string): string {
 
 export function ReviewStep() {
   const { deployment, hubWallet, ethWallet, hubWriter } = useBridge()
-  const { flow, update } = useFlow()
+  const { flow, update, restart } = useFlow()
   const toast = useToast()
   const ids = flow.picked
   const n = ids.length
@@ -137,7 +138,8 @@ export function ReviewStep() {
     setReached(null)
     try {
       const result = await send.run(ids, address)
-      update({ sent: { ids, recipient: address, txHash: result.txHash }, picked: [], claimTx: null })
+      restart()
+      navigate({ name: 'crossing' })
       toast({
         tone: 'ok',
         title: `Sent! ${n} ${kidWord(n)} on the bridge`,

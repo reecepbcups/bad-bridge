@@ -2,11 +2,13 @@ import { useMemo, useSyncExternalStore } from 'react'
 import type { KidId } from './chain/types'
 
 // Hash routing, so dist/ works on any static host or IPFS gateway without rewrites.
-// #/  #/kids  #/kids/<0x…|cosmos1…>  #/kid/<id>  #/about
+// #/  #/crossing  #/crossing/<0x…|cosmos1…>  #/kids  #/kids/<0x…|cosmos1…>  #/kid/<id>  #/about
 
 export type Route =
   | { name: 'bridge' }
-  /** the tracker; `address` is whatever was in the URL, unvalidated */
+  /** kids still on the bridge; `address` is whatever was in the URL, unvalidated */
+  | { name: 'crossing'; address?: string }
+  /** kids home on Ethereum; `address` as above */
   | { name: 'kids'; address?: string }
   | { name: 'kid'; id: KidId }
   | { name: 'about' }
@@ -34,6 +36,7 @@ export function parseHash(hash: string): Route {
   if (rest.length === 0) {
     if (head === undefined) return { name: 'bridge' }
     if (head === 'about' && arg === undefined) return { name: 'about' }
+    if (head === 'crossing') return arg === undefined ? { name: 'crossing' } : { name: 'crossing', address: arg.trim() }
     if (head === 'kids') return arg === undefined ? { name: 'kids' } : { name: 'kids', address: arg.trim() }
     if (head === 'kid' && arg !== undefined) {
       const id = parseKidId(arg)
@@ -47,6 +50,8 @@ export function href(route: Route): string {
   switch (route.name) {
     case 'bridge':
       return '#/'
+    case 'crossing':
+      return route.address ? `#/crossing/${encodeURIComponent(route.address)}` : '#/crossing'
     case 'kids':
       return route.address ? `#/kids/${encodeURIComponent(route.address)}` : '#/kids'
     case 'kid':

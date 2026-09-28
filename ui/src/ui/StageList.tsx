@@ -35,11 +35,14 @@ export function StageList({
   health,
   kids = 1,
   showLag = true,
+  speedUp,
 }: {
   facts: StageFacts
   health: Health | undefined
   kids?: number
   showLag?: boolean
+  /** Shown under the "Ethereum caught up" step while it's the current one. */
+  speedUp?: ReactNode
 }) {
   const { deployment } = useBridge()
   const now = useWallClock()
@@ -76,7 +79,7 @@ export function StageList({
           </>
         ) : facts.blocksToGo !== undefined ? (
           <>
-            {blocks(facts.blocksToGo)} to go. {lag}
+            Ethereum client is behind {blocks(facts.blocksToGo)}. {lag}
           </>
         ) : (
           lag
@@ -127,6 +130,7 @@ export function StageList({
               </b>
               <span className="d">{item.detail}</span>
               {state === 'now' && item.live && <span className="d live">{item.live}</span>}
+              {state === 'now' && i === 1 && speedUp}
             </span>
           </li>
         )
