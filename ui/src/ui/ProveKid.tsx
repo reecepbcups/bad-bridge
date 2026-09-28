@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useBridge } from '../chain/context'
 import type { ProveStage } from '../chain/prove'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
 import { ConnectButton } from './Connect'
+import { ExtLink } from './ExtLink'
 import { useToast, type Toast } from './Toasts'
 
 // Mirrors Claim.tsx's useClaimFlow/ClaimButton pattern, for the browser-only "prove my own kid" flow
 // (issue #8): own kid only, one at a time, same wallet that would eventually submitBatch it.
+
+/** Where the connected wallet manages its Succinct network PROVE balance. */
+const PROVE_ACCOUNT_URL = 'https://explorer.succinct.xyz/account'
 
 /** The toast once a kid's proof lands on Ethereum. */
 export function provenToast(id: KidId): Toast {
@@ -59,6 +63,50 @@ export function useProveFlow(): ProveFlow {
     }
   }
   return { run, pending: proving !== null, proving, stage, failure }
+}
+
+/**
+ * The connected wallet's PROVE balance on Succinct's network, read once per wallet (see
+ * chain/prove.ts's proveBalance — no signature needed). `null` while loading, not yet fetched, or the read
+ * failed; failures aren't surfaced here since this is only ever used for an optional "you might need PROVE"
+ * hint, not something to block on.
+ */
+function useProveBalance(): bigint | null {
+  const { proveKid } = useBridge()
+  const [wei, setWei] = useState<bigint | null>(null)
+  useEffect(() => {
+    if (!proveKid) return
+    let cancelled = false
+    proveKid
+      .proveBalance()
+      .then((w) => {
+        if (!cancelled) setWei(w)
+      })
+      .catch(() => {
+        if (!cancelled) setWei(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [proveKid])
+  // Derived, not reset in the effect: no wallet (or a wallet whose fetch hasn't resolved yet) reads as null.
+  return proveKid ? wei : null
+}
+
+/**
+ * "You'll need a bit of $PROVE" — shown once the connected wallet's Succinct network balance reads back as
+ * exactly zero (not while it's still loading, and not on a failed read: both are `null`, so this stays quiet
+ * rather than risk a false alarm before someone's even tried proving anything).
+ */
+export function ProveBalanceNote() {
+  const balance = useProveBalance()
+  if (balance !== 0n) return null
+  return (
+    <p className="hint">
+      Proving costs a little $PROVE on Succinct's network — looks like this wallet doesn't have any yet.{' '}
+      <ExtLink href={PROVE_ACCOUNT_URL}>Get PROVE</ExtLink>
+    </p>
+  )
 }
 
 /** A "Prove it yourself" button for a kid whose proof hasn't landed yet. Without a wallet it opens the connect sheet. */

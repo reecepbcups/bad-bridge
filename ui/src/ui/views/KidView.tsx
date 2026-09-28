@@ -11,7 +11,7 @@ import { blockNumber, dateTime, shortAddress, shortHash } from '../format'
 import { useFocusWhenDone } from '../hooks'
 import { KidArt } from '../KidArt'
 import { isKidId } from '../lookup'
-import { ProveButton, useProveFlow } from '../ProveKid'
+import { ProveBalanceNote, ProveButton, useProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { StageList } from '../StageList'
 import { STAGE_PILL } from '../stages'
@@ -122,6 +122,7 @@ function Kid({ id }: { id: KidId }) {
               <span className="hint">Normally the batcher proves it for you. This does it now, from your wallet.</span>
             </div>
           )}
+          {!deployment.demo && t.stage === 'proving' && <ProveBalanceNote />}
           {t.stage === 'proving' && ethWallet.wrongChain && <SwitchChain />}
           {prove.failure && <ErrorNote error={prove.failure.error} action="prove" walletName={ethWallet.walletName} tokenId={id} />}
           {sent && <StageList facts={t} health={health.data} />}

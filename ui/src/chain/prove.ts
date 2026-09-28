@@ -13,7 +13,7 @@ import type { EthWriterWithBatch } from './eth/writer'
 import { escrowRaw, proofHeader, proveAt, storeKey } from './hub/prove'
 import { encodeSp1Stdin, stdinChunks } from './hub/stdin'
 import { createTransport } from './hub/transport'
-import type { SuccinctStage } from './succinct/client'
+import { getProveBalance, type SuccinctStage } from './succinct/client'
 import { BridgeError, type EthAddress, type KidId } from './types'
 
 export type ProveStage = 'finding-proof' | SuccinctStage | 'signing' | 'confirming'
@@ -36,6 +36,12 @@ export interface ProveKidResult {
 
 export interface ProveKidWriter {
   proveKid(id: KidId, options?: ProveKidOptions): Promise<ProveKidResult>
+  /**
+   * The connected wallet's PROVE balance deposited on Succinct's network — what RequestProof actually draws
+   * from, not the wallet's ERC20 PROVE balance (a separate, unrelated number). Wei-like base units (18
+   * decimals). Needs no signature, so this is safe to call just to show a "you'll need some PROVE" note.
+   */
+  proveBalance(): Promise<bigint>
 }
 
 export function createProveKidWriter(deployment: Deployment, ethWriter: EthWriterWithBatch): ProveKidWriter {
@@ -76,5 +82,5 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     return ethWriter.submitBatch(height, cs, sp1Proof, { onStage })
   }
 
-  return { proveKid }
+  return { proveKid, proveBalance: () => getProveBalance(ethWriter.address) }
 }

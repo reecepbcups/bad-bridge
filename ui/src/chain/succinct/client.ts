@@ -78,6 +78,20 @@ async function isProgramRegistered(vkHash: Uint8Array, fetchImpl: typeof fetch):
   return res.has(1)
 }
 
+/**
+ * The address's PROVE balance deposited on Succinct's network (what RequestProof draws from) — not its
+ * ERC20 wallet balance, which is a separate, unrelated number. Wei-like base units (18 decimals), as a
+ * stringified integer over the wire (`GetBalanceResponse.amount`); no signature needed, just the address.
+ * Live-verified (this session): a real zero-balance address returns amount "0" over a real grpc-web call.
+ */
+export async function getProveBalance(address: Address, fetchImpl: typeof fetch = fetch): Promise<bigint> {
+  const req = new MessageWriter().bytes32(1, hexToBytes(address)).finish()
+  const res = await call('/network.ProverNetwork/GetBalance', req, fetchImpl)
+  const amount = res.string(1)
+  if (amount === undefined || !/^\d+$/.test(amount)) throw new BridgeError('Unknown', `GetBalance: unexpected amount ${JSON.stringify(amount)}`)
+  return BigInt(amount)
+}
+
 interface AuctionParams {
   domain: Uint8Array
   auctioneer: Uint8Array
