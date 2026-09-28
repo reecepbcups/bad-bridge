@@ -238,6 +238,15 @@ export class FakeChain {
         if (commit) this.owners.set(id, to)
         return { ok: true, data: '0x' }
       }
+      case 'claimMany': {
+        // like the contract: unproven reverts the batch, already minted is skipped
+        for (const id of call.args[0]) {
+          const to = this.proven.get(id)
+          if (!to) return revert('NotProven', [id])
+          if (commit && !this.owners.has(id)) this.owners.set(id, to)
+        }
+        return { ok: true, data: '0x' }
+      }
       case 'submitBatch':
         // Not simulated: no test here exercises submitBatch yet. Kept as a no-op success case only so this
         // switch stays exhaustive over bridgeAbi's functionName union.

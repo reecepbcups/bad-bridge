@@ -14,6 +14,7 @@ export const bridgeAbi = parseAbi([
   'function ROUTER() view returns (address)',
   'function clientId() view returns (string)',
   'function claim(uint32 tokenId)',
+  'function claimMany(uint32[] tokenIds)',
   'function submitBatch(uint64 proofHeight, ConsensusState cs, SP1Proof sp1Proof)',
   'error NotProven(uint32 tokenId)',
   'error ClientFrozen()',
