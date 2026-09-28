@@ -2,12 +2,11 @@ import { useId, useRef, useState } from 'react'
 import { useBridge } from '../../../chain/context'
 import { MAX_KIDS_PER_SEND, type KidId } from '../../../chain/types'
 import { isLive } from '../../../config/deployments'
-import { href } from '../../../router'
 import { useOwnedKids, useRememberedTrips, useTrips } from '../../../trips/hooks'
 import type { Trip } from '../../../trips/types'
 import { CHAIN_NAME, WalletOptions } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
-import { kidWord, shortDate } from '../../format'
+import { kidWord } from '../../format'
 import { KidArt, KidDoodle } from '../../KidArt'
 import { inFlight } from '../../stages'
 import { useTitle } from '../../useTitle'
@@ -94,8 +93,9 @@ function KidPicker() {
   const [query, setQuery] = useState('')
   const findId = useId()
 
-  const kids = owned.data
-  const pickable = new Set((kids ?? []).filter((t) => t.stage === 'home-hub').map((t) => t.tokenId))
+  // only kids actually on the Hub belong here; ones already sent (crossing, ready, or claimed) live in "My kids"
+  const kids = owned.data?.filter((t) => t.stage === 'home-hub')
+  const pickable = new Set((kids ?? []).map((t) => t.tokenId))
   // a picked kid that left (sent from elsewhere) drops out of the pick
   const picked = kids ? flow.picked.filter((id) => pickable.has(id)) : flow.picked
   const n = picked.length
@@ -201,7 +201,7 @@ function KidPicker() {
   )
 }
 
-/** A kid at home is a toggle. One that already left links to its trip. */
+/** Toggles picking a kid that's home on the Hub. */
 function KidTile({
   trip,
   picked,
@@ -214,23 +214,6 @@ function KidTile({
   blocked: boolean
   onToggle: (id: KidId) => void
 }) {
-  if (trip.stage !== 'home-hub') {
-    const sub =
-      trip.stage === 'home-eth'
-        ? trip.sentAt
-          ? `crossed ${shortDate(trip.sentAt)}`
-          : 'on Ethereum'
-        : trip.stage === 'ready'
-          ? 'ready to claim'
-          : 'crossing'
-    return (
-      <a className="kid away" href={href({ name: 'kid', id: trip.tokenId })}>
-        <KidArt id={trip.tokenId} decorative />
-        <span className="name">#{trip.tokenId}</span>
-        <span className="sub">{sub}</span>
-      </a>
-    )
-  }
   return (
     <button
       type="button"

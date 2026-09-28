@@ -58,8 +58,8 @@ test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, don
   // the list went away with the connect: focus lands on the heading above the kids
   await expect(page.getByRole('heading', { level: 2, name: "Who's crossing?" })).toBeFocused()
 
-  // pick two; #8073 already crossed, so its tile links to its trip instead
-  await expect(page.getByRole('link', { name: /#8073 crossed Sep 23/ })).toHaveAttribute('href', '#/kid/8073')
+  // pick two; #8073 already crossed, so it isn't in the pick at all
+  await expect(page.getByRole('button', { name: /#8073/ })).toHaveCount(0)
   const kid = page.getByRole('button', { name: /^#9176 on the Hub/ })
   await kid.click()
   await expect(kid).toHaveAttribute('aria-pressed', 'true')
@@ -119,10 +119,10 @@ test('happy path: connect both wallets, send 2 kids, cross, claim in one tx, don
   await expect(page.getByRole('link', { name: /^#9176\b/ })).toHaveAttribute('href', `https://opensea.io/assets/ethereum/${BRIDGE}/9176`)
   await expect(page.getByRole('status').getByText(/Claimed (#9176 & #6413|#6413 & #9176)/)).toBeVisible()
 
-  // bridge another: they're no longer pickable, just links to their trips
+  // bridge another: they've crossed, so they're gone from the pick entirely
   await page.getByRole('button', { name: 'Bridge another' }).click()
   await expect(page.getByRole('heading', { level: 2, name: "Who's crossing?" })).toBeVisible()
-  await expect(page.getByRole('link', { name: /^#9176/ })).toHaveAttribute('href', '#/kid/9176')
+  await expect(page.getByRole('link', { name: /^#9176/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^#9176/ })).toHaveCount(0)
   expect(errors).toEqual([])
 })
@@ -283,11 +283,11 @@ test('big wallets: 60 tiles, then "show more"', async ({ page }) => {
   await page.goto('./?demo=paused,instant,many#/')
   const tiles = page.getByRole('group', { name: 'Your kids' }).locator('.kid')
   await expect(tiles).toHaveCount(60)
-  await expect(page.getByText('96 more in this wallet')).toBeVisible()
+  await expect(page.getByText('95 more in this wallet')).toBeVisible()
   await page.getByRole('button', { name: 'Show 60 more' }).click()
   await expect(tiles).toHaveCount(120)
-  await page.getByRole('button', { name: 'Show 36 more' }).click()
-  await expect(tiles).toHaveCount(156)
+  await page.getByRole('button', { name: 'Show 35 more' }).click()
+  await expect(tiles).toHaveCount(155)
   // pictures load lazily; kids without one get a doodle
   await expect(page.locator('.kids img').first()).toHaveAttribute('loading', 'lazy')
   await expect(page.getByRole('img', { name: 'Bad Kid #1000' })).toHaveCount(0) // decorative inside a labelled tile

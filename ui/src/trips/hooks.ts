@@ -47,8 +47,9 @@ export type { TrustFacts } from './trust'
 
 /**
  * The connected Hub wallet's kids, for the pick screen: still-home ones first (ascending, stage `home-hub`),
- * then every kid it sent, with its current stage (ready first, then in flight, then home on Ethereum), so
- * they can show disabled. Idle (no data) until a Hub wallet is connected.
+ * then every kid it sent, with its current stage (ready first, then in flight, then home on Ethereum), so a
+ * kid picked here that then left (sent from elsewhere) can drop out of the pick. Idle (no data) until a Hub
+ * wallet is connected.
  */
 export function useOwnedKids(): QueryState<Trip[]> {
   const ctx = useCtx()

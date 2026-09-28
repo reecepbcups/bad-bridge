@@ -21,10 +21,6 @@
 }
 .kid:disabled { cursor: default; opacity: .5; }
 .kid[aria-disabled="true"] { cursor: not-allowed; }
-/* already left: a link to its trip, dashed like a kid that's elsewhere */
-a.kid { display: block; text-decoration: none; }
-.kid.away { border-style: dashed; }
-.kid.away .art { opacity: .55; }
 
 /* review: the picked kids */
 .picked { display: flex; flex-wrap: wrap; gap: 10px; }
