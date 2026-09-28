@@ -66,15 +66,39 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
     })
   const escrow = deployment.hub.escrow
 
+  const requireEscrow = (): void => {
+    if (!escrow) throw new BridgeError('NotLive', `${deployment.collectionName} has no escrow on the Hub yet`)
+  }
+
   const hub: HubReader = {
     ownedKids: (owner) => read(() => sim.ownedKids(owner)),
-    record: (id) => read(() => sim.record(id)),
-    allRecords: () => read(() => sim.allRecords()),
-    sendInfo: (id) => read(() => sim.sendInfo(id)),
-    sendsBy: (sender) => read(() => sim.sendsBy(sender)),
+    record: (id) =>
+      read(() => {
+        requireEscrow()
+        return sim.record(id)
+      }),
+    allRecords: () =>
+      read(() => {
+        requireEscrow()
+        return sim.allRecords()
+      }),
+    sendInfo: (id) =>
+      read(() => {
+        requireEscrow()
+        return sim.sendInfo(id)
+      }),
+    sendsBy: (sender) =>
+      read(() => {
+        requireEscrow()
+        return sim.sendsBy(sender)
+      }),
     latestBlock: () => read(() => sim.latestBlock()),
     block: (height) => read(() => sim.block(height)),
-    escrowCw721: () => read(() => deployment.hub.cw721),
+    escrowCw721: () =>
+      read(() => {
+        requireEscrow()
+        return deployment.hub.cw721
+      }),
     contractInfo: (address) =>
       read((): ContractInfo => {
         if (address === deployment.hub.cw721) return { codeId: 434, admin: DEMO_COLLECTION_ADMIN }
@@ -83,9 +107,21 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
       }),
   }
 
+  const requireBridge = (): void => {
+    if (!deployment.eth.bridge) throw new BridgeError('NotLive', 'no bridge in this deployment')
+  }
+
   const eth: EthReader = {
-    client: () => read(() => sim.client()),
-    kidStatus: (ids) => read(() => sim.kidStatus(ids)),
+    client: () =>
+      read(() => {
+        requireBridge()
+        return sim.client()
+      }),
+    kidStatus: (ids) =>
+      read(() => {
+        requireBridge()
+        return sim.kidStatus(ids)
+      }),
     isContract: (address) => read(() => sim.isContract(address)),
     bridgeEscrow: () =>
       read(() => {
@@ -106,7 +142,11 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
         const gas = typicalClaimGas(Math.max(1, new Set(ids).size))
         return { gas: Number(gas), gasPrice: DEMO_GAS_PRICE.toString(), fee: (gas * DEMO_GAS_PRICE).toString(), simulated: false }
       }),
-    hubClientId: () => read(() => DEMO_HUB_CLIENT_ID),
+    hubClientId: () =>
+      read(() => {
+        requireBridge()
+        return DEMO_HUB_CLIENT_ID
+      }),
   }
 
   return { hub, eth }

@@ -58,7 +58,7 @@ function ViewCrashed({ error, reset }: { error: Error; reset: () => void }) {
         <button type="button" className="btn" onClick={reset}>
           Try again
         </button>
-        <a className="btn ghost" href="#/">
+        <a className="btn ghost" href="#/" onClick={reset}>
           Back to the bridge
         </a>
       </div>

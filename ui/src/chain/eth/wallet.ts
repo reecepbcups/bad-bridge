@@ -57,7 +57,9 @@ export function useEthWallet(deployment: Deployment): WalletState<EthAddress> {
       if (!connector) throw new BridgeError('Unknown', `no Ethereum wallet "${id}"`)
       setPending(true)
       try {
-        await connect(config, { connector, chainId: target })
+        // no chainId here: if the connector needs to switch chains and the user rejects, connect() would throw
+        // and abort the whole attempt. Let it connect on whatever chain, and wrongChain/switchChain handle the rest.
+        await connect(config, { connector })
       } catch (e) {
         if (e instanceof Error && e.name === 'ConnectorAlreadyConnectedError') return
         throw toEthError(e)

@@ -96,14 +96,14 @@ describe('fees', () => {
 })
 
 describe('fee caps', () => {
-  it('clamps the gas price at 0.05', () => {
+  it('rejects a feemarket price above the ceiling', () => {
     expect(MAX_GAS_PRICE).toBe('0.05')
     expect(clampGasPrice('0.005000000000000000')).toBe('0.005000000000000000')
     expect(clampGasPrice('0.05')).toBe('0.05')
     expect(clampGasPrice('0.050000000000000000')).toBe('0.050000000000000000')
-    expect(clampGasPrice('0.050000000000000001')).toBe('0.05')
-    expect(clampGasPrice('2.5')).toBe('0.05')
-    expect(clampGasPrice('not a number')).toBe('0.05')
+    expect(() => clampGasPrice('0.050000000000000001')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+    expect(() => clampGasPrice('2.5')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
+    expect(clampGasPrice('not a number')).toBe('0.05') // unparseable falls back to the ceiling, rather than throwing
   })
 
   it('refuses simulated gas over 600k per kid plus 300k', () => {
@@ -127,15 +127,15 @@ describe('fee caps', () => {
     expect(() => checkFee(100, 100n * 600_000n + 300_000n, worst.fee, 'uatom')).toThrow(expect.objectContaining({ code: 'FeeTooHigh' }) as Error)
   })
 
-  it('a lying feemarket price is clamped, not signed', async () => {
-    const wallet = await DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos')
-    const address = (await wallet.getAccounts())[0]?.address ?? ''
+  it('a lying feemarket price is rejected, not signed', async () => {
+    const address = REECE
     const lying = () => json({ price: { denom: 'uatom', amount: '2.500000000000000000' } })
-    await expect(writer(chain({ price: lying() }).fetch).simulateSend([1], RECIPIENT)).resolves.toMatchObject({ amount: '23440' }) // 312531 × 0.05 × 1.5
+    await expect(codeOf(writer(chain({ price: lying() }).fetch).simulateSend([1], RECIPIENT))).resolves.toMatchObject({ code: 'FeeTooHigh' })
     const { fetch, seen } = chain({ price: lying() })
-    await writer(fetch, { address, signer: wallet }).send([1], RECIPIENT)
-    const auth = AuthInfo.decode(TxRaw.decode(seen.broadcast[0] ?? new Uint8Array()).authInfoBytes)
-    expect(auth.fee?.amount).toEqual([{ denom: 'uatom', amount: '23440' }])
+    const getSigner = vi.fn(() => DirectSecp256k1Wallet.fromKey(TEST_KEY, 'cosmos'))
+    await expect(codeOf(writer(fetch, { address, signer: getSigner }).send([1], RECIPIENT))).resolves.toMatchObject({ code: 'FeeTooHigh' })
+    expect(getSigner).not.toHaveBeenCalled()
+    expect(seen.broadcast).toHaveLength(0)
   })
 
   it('a lying simulate is FeeTooHigh and the wallet never opens', async () => {
@@ -273,7 +273,7 @@ describe('send', () => {
     const { fetch, seen } = chain({
       broadcast: () => json({ tx_response: { code: 13, raw_log: 'insufficient fees; got: 2344uatom required: 9000uatom: insufficient fee' } }),
     })
-    await expect(codeOf(writer(fetch, { address, signer: wallet }).send([1], RECIPIENT))).resolves.toMatchObject({ code: 'InsufficientFunds' })
+    await expect(codeOf(writer(fetch, { address, signer: wallet }).send([1], RECIPIENT))).resolves.toMatchObject({ code: 'FeeTooLow' })
     expect(seen.polls).toBe(0)
   })
 

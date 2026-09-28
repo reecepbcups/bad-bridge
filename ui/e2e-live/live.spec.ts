@@ -40,6 +40,10 @@ function watch(page: Page): { problems: string[] } {
     const host = new URL(r.url()).hostname
     if (!r.url().startsWith('data:') && !ALLOWED_HOSTS.has(host)) problems.push(`request to ${r.url()}`)
   })
+  page.on('websocket', (ws) => {
+    const host = new URL(ws.url()).hostname
+    if (!ALLOWED_HOSTS.has(host)) problems.push(`websocket to ${ws.url()}`)
+  })
   return { problems }
 }
 

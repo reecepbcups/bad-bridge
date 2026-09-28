@@ -111,7 +111,12 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     return writeContract(wallet, { ...request, account: wallet.account, chain })
   }
 
-  async function claimMany(wallet: SignerClient, bridge: Address, ids: readonly KidId[], report: Report): Promise<Hex> {
+  async function claimMany(
+    wallet: SignerClient,
+    bridge: Address,
+    ids: readonly KidId[],
+    report: Report,
+  ): Promise<{ hash: Hex; claimed: KidId[] }> {
     // allowFailure: a kid someone else claims meanwhile doesn't sink the rest. Simulate to drop any that fail now.
     const { result } = await simulateContract(publicClient, {
       account: wallet.account,
@@ -126,7 +131,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       const revert = first ? decodeRevert(first.returnData) : undefined
       throw revert ? revertToBridgeError(revert, ids[0]) : new BridgeError('Unknown', `every claim in the batch failed: ${kids(ids)}`)
     }
-    if (ok.length === 1) return claimOne(wallet, bridge, ok[0] as KidId, report)
+    if (ok.length === 1) return { hash: await claimOne(wallet, bridge, ok[0] as KidId, report), claimed: ok as KidId[] }
 
     // Gas comes from the allowFailure: false twin. With allowFailure: true the outer call "succeeds" even
     // when an inner claim runs out of gas, so estimating it directly can come back too low and mint nothing.
@@ -138,7 +143,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       args: [claimCalls(bridge, ok, false)],
     })
     report('signing')
-    return writeContract(wallet, {
+    const hash = await writeContract(wallet, {
       account: wallet.account,
       chain,
       address: multicall3,
@@ -147,6 +152,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       args: [claimCalls(bridge, ok, true)],
       gas: (strictGas * GAS_MARGIN_NUM) / GAS_MARGIN_DEN,
     })
+    return { hash, claimed: ok as KidId[] }
   }
 
   async function claim(ids: readonly KidId[], report: Report): Promise<ClaimResult> {
@@ -164,9 +170,9 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     const { claimable, minted, unproven } = sortClaimable(unique, await reader.kidStatus(unique))
     if (claimable.length === 0) throw nothingToClaim(minted, unproven)
 
-    const hash =
+    const { hash, claimed } =
       claimable.length === 1
-        ? await claimOne(wallet, bridge, claimable[0] as KidId, report)
+        ? { hash: await claimOne(wallet, bridge, claimable[0] as KidId, report), claimed: [claimable[0] as KidId] }
         : await claimMany(wallet, bridge, claimable, report)
 
     report('confirming')
@@ -180,7 +186,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     })
     if (cancelled) throw new BridgeError('UserRejected', `claim ${hash} was cancelled in the wallet`)
     if (receipt.status !== 'success') throw new BridgeError('Unknown', `claim transaction ${receipt.transactionHash} reverted`)
-    return { txHash: receipt.transactionHash }
+    return { txHash: receipt.transactionHash, claimed }
   }
 
   return {

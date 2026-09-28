@@ -8,10 +8,12 @@ export const ERROR_CODES = [
   'BadTokenId',
   'BadRecipient',
   'ZeroRecipient',
+  'BurnRecipient',
   'AlreadyBridged',
   'NotOwner',
   'TooManyKids',
   'FeeTooHigh',
+  'FeeTooLow',
   'ClientFrozen',
   'NotProven',
   'UserRejected',
@@ -67,10 +69,20 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
     title: "That's the zero address",
     body: 'Kids sent there are gone forever, so the send was stopped before it started. Nothing was sent.',
   }),
-  AlreadyBridged: ({ kid }) => ({
-    title: `${kid === 'that kid' ? 'One of these kids' : kid} already crossed`,
-    body: "It's already in the escrow, and a kid can only cross once. Take it out of your pick and try again.",
+  BurnRecipient: () => ({
+    title: "That's a burn or system address",
+    body: 'Kids sent there are gone forever, so the send was stopped before it started. Nothing was sent.',
   }),
+  AlreadyBridged: ({ kid, action }) =>
+    action === 'claim'
+      ? {
+          title: `${kid === 'that kid' ? 'One of these kids' : kid} is already claimed`,
+          body: "It's already minted on Ethereum, so this claim can't go through. Nothing else changed.",
+        }
+      : {
+          title: `${kid === 'that kid' ? 'One of these kids' : kid} already crossed`,
+          body: "It's already in the escrow, and a kid can only cross once. Take it out of your pick and try again.",
+        },
   NotOwner: ({ kid }) => ({
     title: `${kid === 'that kid' ? 'One of these kids' : kid} isn't in this wallet`,
     body: "The Hub says this wallet doesn't own it anymore. It may have moved since the list loaded. Nothing was sent.",
@@ -82,6 +94,10 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
   FeeTooHigh: () => ({
     title: 'That fee looks wrong',
     body: 'The Hub quoted far more than a send should cost, so we stopped before your wallet opened. Nothing was sent. Try again in a bit.',
+  }),
+  FeeTooLow: () => ({
+    title: 'Fee needs a bump',
+    body: "The Hub wants a bit more than was offered right now. Fee requirements shift, so try again in a moment. Nothing was sent.",
   }),
   ClientFrozen: () => ({
     title: 'The bridge is stuck for now',
@@ -115,7 +131,7 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
   }),
   Network: () => ({
     title: "Can't reach the chains",
-    body: "The public endpoints aren't answering. Check your connection and try again in a moment.",
+    body: "The public endpoints aren't answering. If you just sent something, it may have already gone through, check before retrying. Otherwise, check your connection and try again in a moment.",
   }),
   Unknown: () => ({
     title: 'Something went wrong',

@@ -16,6 +16,8 @@ const DEMO_KIDS: ReadonlySet<KidId> = new Set([663, 3838, 4801, 6413, 8073, 8783
  */
 export function kidImage(id: KidId, deployment: Deployment = activeDeployment): string[] {
   if (!Number.isInteger(id) || id < 0) return []
-  if (deployment.demo) return DEMO_KIDS.has(id) ? [`${import.meta.env.BASE_URL}demo-kids/${id}.jpg`] : []
+  if (deployment.demo) {
+    return DEMO_KIDS.has(id) ? [`${import.meta.env.BASE_URL}demo-kids/${id}.jpg`] : []
+  }
   return [`${BUCKET_256}/${id}.jpg`, `${IPFS_GATEWAY}/${IPFS_IMAGES}/${id}.jpg`]
 }

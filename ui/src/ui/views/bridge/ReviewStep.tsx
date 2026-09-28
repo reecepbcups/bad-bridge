@@ -1,4 +1,5 @@
-import { useId, useState } from 'react'
+import { useIsMutating } from '@tanstack/react-query'
+import { useEffect, useId, useState } from 'react'
 import { useBridge } from '../../../chain/context'
 import { recipientMsg } from '../../../chain/encode-recipient'
 import { checkRecipient, type RecipientCheck } from '../../../chain/eth/recipient'
@@ -82,10 +83,18 @@ export function ReviewStep() {
   // the furthest the last send got: only a signed send could have landed
   const [reached, setReached] = useState<SendStage | null>(null)
   const send = useSendKids({ onStage: setReached })
-  const sending = send.status === 'pending'
+  // survives an unmount/remount of this step: a send from before the remount still counts as pending
+  const sendMutating = useIsMutating({ mutationKey: ['bridge', deployment.id, 'send'] }) > 0
+  const sending = send.status === 'pending' || sendMutating
   const walletName = hubWallet.walletName ?? 'your wallet'
   // null only for the moment before the writer reports its first stage
   const stage: SendStage | null = sending ? (send.stage ?? 'simulating') : null
+
+  // a stale send error shouldn't outlive the inputs it was about; useSendEstimate keys off the same two
+  useEffect(() => {
+    send.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids.join(','), address])
 
   const inputId = useId()
   const hintId = useId()
@@ -185,6 +194,7 @@ export function ReviewStep() {
           placeholder="0x…"
           aria-invalid={check !== null && !check.ok}
           aria-describedby={hintId}
+          disabled={sending}
         />
       </div>
       {address && (

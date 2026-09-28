@@ -117,6 +117,7 @@ test.describe('on a phone', () => {
     await tall(page.getByRole('navigation', { name: 'Sections' }).getByRole('link'))
 
     await page.goto(`${DEMO_OFF}#/`)
+    await expect(page.getByRole('heading', { level: 2, name: "Who's crossing?" })).toBeVisible()
     await tall(page.locator('.wallet-opt a.get'))
     await tall(page.locator('.chip'))
   })

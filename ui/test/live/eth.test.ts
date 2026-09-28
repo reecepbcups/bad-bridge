@@ -4,11 +4,13 @@ import { fromBech32 } from '@cosmjs/encoding'
 import { bytesToHex, getAddress } from 'viem'
 import { describe, expect, it } from 'vitest'
 import { createEthReader, KID_STATUS_CHUNK } from '../../src/chain/eth/reader'
+import { createHubReader } from '../../src/chain/hub'
 import { DEPLOYMENTS } from '../../src/config/deployments'
 import { checkConfig } from '../../src/trips/sanity'
 
 const d = DEPLOYMENTS['reece-test']
 const reader = createEthReader(d)
+const hub = createHubReader(d)
 // bridged #2 and #3 to itself. An EIP-7702-delegated EOA, so it has code but isn't a contract.
 const REECE = getAddress('0xd2c392084761cb6e44c544b6f39dcc001fde9775')
 // the block the #3 send landed in on the Hub
@@ -55,8 +57,8 @@ describe('eth reader on mainnet (reece-test)', () => {
   })
 
   it('the whole startup check passes against mainnet', async () => {
-    const [bridgeEscrow, wiring] = await Promise.all([reader.bridgeEscrow(), reader.bridgeWiring()])
-    expect(checkConfig(d, d.hub.cw721, bridgeEscrow, wiring)).toEqual({ ok: true, status: 'ok', problems: [] })
+    const [escrowCw721, bridgeEscrow, wiring] = await Promise.all([hub.escrowCw721(), reader.bridgeEscrow(), reader.bridgeWiring()])
+    expect(checkConfig(d, escrowCw721, bridgeEscrow, wiring)).toEqual({ ok: true, status: 'ok', problems: [] })
   })
 
   it('proxyImplementation: the Eureka router is an upgradeable proxy; the bridge is not', async () => {

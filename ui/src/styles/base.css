@@ -82,12 +82,12 @@ a.btn { display: inline-block; text-decoration: none; }
 /* form fields */
 label.field, .field { display: grid; gap: 6px; font: 700 20px/1 var(--display); }
 .field label { font: inherit; }
-input[aria-invalid="true"] { border-color: var(--crayon); }
 input[type="text"] {
   font: 500 15px/1 var(--mono); color: var(--ink); background: var(--paper);
   border: 2.5px solid var(--ink); border-radius: var(--wobble-2);
   padding: 12px 14px; width: 100%;
 }
+input[aria-invalid="true"] { border-color: var(--crayon); }
 input::placeholder { color: var(--ink-soft); opacity: 1; }
 .hint { font: 600 13px/1.4 var(--body); color: var(--ink-soft); }
 .hint.bad { color: var(--crayon-ink); }

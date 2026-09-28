@@ -233,13 +233,13 @@ describe('Ethereum failures', () => {
     ])
   })
 
-  it("fails a kid whose record can't be read: without it the stage is a guess", async () => {
+  it("guesses a kid's stage when its record can't be read, rather than failing it: the error comes back beside it", async () => {
     const chain = everyStage()
     chain.fail.record = networkError()
     const { wrapper } = fakeBridge(chain)
     const { result } = renderHook(() => useTrip(99), { wrapper })
-    await waitFor(() => expect(result.current.error?.code).toBe('Network'))
-    expect(result.current.data).toBeUndefined()
+    expect(await loaded(result)).toMatchObject({ tokenId: 99, stage: 'home-hub' })
+    expect(result.current.error?.code).toBe('Network')
   })
 
   it("still shows a proven or minted kid whose record can't be read", async () => {
@@ -287,7 +287,7 @@ describe('polling', () => {
     expect(eth.client.mock.calls.length - before).toBeGreaterThanOrEqual(3)
   })
 
-  it('keeps looking up an address, but skips minted kids until their owner is due a re-read', async () => {
+  it("keeps polling an address, but skips its cached records table and a minted kid's owner", async () => {
     const chain = everyStage()
     chain.proven.set(5, BOB)
     chain.owners.set(5, BOB)
@@ -296,7 +296,9 @@ describe('polling', () => {
     expect(stages(await loaded(result))).toEqual([[5, 'home-eth']])
     const [records, statuses] = [hub.allRecords.mock.calls.length, eth.kidStatus.mock.calls.length]
     await act(() => vi.advanceTimersByTimeAsync(2 * POLL_MS + 1_000))
-    expect(hub.allRecords.mock.calls.length).toBeGreaterThan(records)
+    // allRecords is staleTime: Infinity (an effectively-immutable table): afterSend invalidates it, polling alone doesn't
+    expect(hub.allRecords.mock.calls.length).toBe(records)
+    // the minted kid's owner is re-read at most every FINAL_REFRESH_MS, which polling alone hasn't reached
     expect(eth.kidStatus.mock.calls.length).toBe(statuses)
   })
 })
@@ -697,7 +699,7 @@ describe('useClaimKids', () => {
   it("puts a kid back to ready if the chain says the claim didn't mint it", async () => {
     const chain = everyStage()
     const ethWriter = fakeEthWriter(chain, ALICE)
-    ethWriter.claim.mockResolvedValueOnce({ txHash: `0x${'ee'.repeat(32)}` }) // mined, minted nothing
+    ethWriter.claim.mockResolvedValueOnce({ txHash: `0x${'ee'.repeat(32)}`, claimed: [] }) // mined, minted nothing
     const { wrapper } = fakeBridge(chain, { ethWriter })
     const { result } = renderHook(() => ({ one: useTrip(3), claim: useClaimKids() }), { wrapper })
     await waitFor(() => expect(result.current.one.data?.stage).toBe('ready'))
@@ -709,11 +711,11 @@ describe('useClaimKids', () => {
     const chain = everyStage()
     const ethWriter = fakeEthWriter(chain, ALICE)
     let finish: () => void = () => undefined
-    ethWriter.claim.mockImplementationOnce((_ids, options) => {
+    ethWriter.claim.mockImplementationOnce((ids, options) => {
       options?.onStage?.('signing')
       options?.onStage?.('confirming')
       return new Promise((resolve) => {
-        finish = () => resolve({ txHash: `0x${'cd'.repeat(32)}` })
+        finish = () => resolve({ txHash: `0x${'cd'.repeat(32)}`, claimed: [...ids] })
       })
     })
     const heard: string[] = []

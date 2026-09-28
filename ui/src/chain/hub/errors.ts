@@ -23,8 +23,10 @@ const CHAIN_RULES: readonly Rule[] = [
     code: 'NotOwner',
     test: /caller is not the contract's current owner|message index: \d+: unauthori[sz]ed|NftInfo.* not found/i,
   },
-  // sender can't cover the fee: no balance, too little, or an account that has never held anything
-  { code: 'InsufficientFunds', test: /insufficient funds|insufficient fees?\b|account \S+ not found/i },
+  // sender can't cover the fee: no balance, or an account that has never held anything
+  { code: 'InsufficientFunds', test: /insufficient funds|account \S+ not found/i },
+  // balance is fine, but the offered fee is below what CheckTx wants: a gas-price problem, not a "top up ATOM" one
+  { code: 'FeeTooLow', test: /insufficient fees?\b/i },
 ]
 
 /** Maps a chain error log (simulate, CheckTx or DeliverTx) to a BridgeError. `ids` are the kids in message order. */

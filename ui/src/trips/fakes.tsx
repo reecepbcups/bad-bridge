@@ -203,11 +203,15 @@ export function fakeEthWriter(chain: FakeChain, address: EthAddress) {
     claim: vi.fn((ids: readonly KidId[], options?: ClaimOptions) => {
       options?.onStage?.('signing')
       options?.onStage?.('confirming')
+      const claimed: KidId[] = []
       for (const id of ids) {
         const to = chain.proven.get(id)
-        if (to) chain.owners.set(id, to)
+        if (to) {
+          chain.owners.set(id, to)
+          claimed.push(id)
+        }
       }
-      return Promise.resolve({ txHash: `0x${'cd'.repeat(32)}` as const })
+      return Promise.resolve({ txHash: `0x${'cd'.repeat(32)}` as const, claimed })
     }),
   } satisfies EthWriter
 }

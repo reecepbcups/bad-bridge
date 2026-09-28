@@ -49,7 +49,7 @@ export function useClaimFlow(): ClaimFlow {
     setFailure(null)
     try {
       const result = await claim.run(ids)
-      toast(claimedToast(ids, result.txHash, deployment.explorer))
+      toast(claimedToast(result.claimed, result.txHash, deployment.explorer))
     } catch (e) {
       setFailure({ error: e as BridgeError, ids })
     } finally {

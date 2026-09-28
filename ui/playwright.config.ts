@@ -19,7 +19,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `pnpm build && pnpm exec vite preview --port ${PORT} --strictPort`,
+    command: `pnpm build --outDir dist-e2e && pnpm exec vite preview --outDir dist-e2e --port ${PORT} --strictPort`,
     env: { VITE_DEPLOYMENT: 'reece-test', VITE_ALLOW_DEMO: '1' },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,

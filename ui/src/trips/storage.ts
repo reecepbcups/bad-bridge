@@ -131,7 +131,10 @@ export function rememberedTrip(deployment: DeploymentId, id: KidId): RememberedT
 
 /** Remembers kids (bare ids or with send details). Known ones keep their place and gain the new fields. */
 export function rememberTrips(deployment: DeploymentId, add: readonly (KidId | RememberedTrip)[]): void {
-  const details = [...current(deployment).details]
+  // the in-memory cache only learns about other tabs' writes via the 'storage' listener, which is only attached
+  // while a subscriber is mounted: re-read localStorage fresh so a write here never clobbers a concurrent write
+  // from another tab that this tab missed.
+  const details = [...loadRemembered(deployment).details]
   let changed = false
   for (const item of add) {
     const entry = parseEntry(item)

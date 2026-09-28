@@ -100,7 +100,9 @@ export function AboutView() {
               It stays locked in the escrow, which has no way to hand it back. That's what makes the Ethereum kid the real
               one.
               {collectionAdmin
-                ? ` One catch: the ${deployment.collectionName} contract has an admin who could upgrade it and move kids out of the escrow (see above).`
+                ? ` One catch: the ${deployment.collectionName} contract has an admin who could upgrade it and move kids out of the escrow (see above).${
+                    escrowAdmin ? ' The escrow itself also has an admin who could upgrade it.' : ''
+                  }`
                 : escrowAdmin
                   ? ' One catch: this escrow has an admin who could upgrade it (see above).'
                   : ''}
@@ -257,8 +259,12 @@ function TrustList({ facts, failed }: { facts: TrustFacts | undefined; failed: b
             <Fact tone="caveat">
               <b>It leans on IBC Eureka.</b> BadBridge checks proofs against Eureka's light client of the Hub, and Eureka's
               governance can freeze or replace that client
-              {facts?.routerUpgradeable ? ' (the Eureka router that points to it can be upgraded)' : ''}. If it's frozen,
-              new kids can't cross until it's fixed; kids that already made it across can still be claimed.
+              {facts?.routerUpgradeable === true
+                ? ' (the Eureka router that points to it can be upgraded)'
+                : facts && facts.routerUpgradeable === undefined
+                  ? " (we couldn't confirm whether the Eureka router can be upgraded)"
+                  : ''}
+              . If it's frozen, new kids can't cross until it's fixed; kids that already made it across can still be claimed.
               {/* COPY: trust, Eureka dependency */}
             </Fact>
           </>

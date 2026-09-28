@@ -158,6 +158,14 @@ describe.skipIf(!hasAnvil)('claim on an anvil mainnet fork', () => {
   })
 
   it('refuses an already-minted kid with NotProven', async () => {
+    // depends on #1 being minted; the earlier "claims one kid" test does that, but running this test alone
+    // (e.g. via `.only`) needs it minted here too, so claim it now and swallow an already-minted outcome
+    await writer()
+      .claim([1])
+      .catch((e: unknown) => {
+        if (!(e instanceof BridgeError) || e.code !== 'NotProven') throw e
+      })
+
     const err = await writer().claim([1]).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(BridgeError)
     expect(err).toMatchObject({ code: 'NotProven', tokenId: 1 })

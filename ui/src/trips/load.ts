@@ -219,8 +219,9 @@ function rememberedSend(rem: RememberedTrip | undefined, record: EscrowRecord | 
  *   and the send's block time when tx search didn't return one.
  *
  * Failures:
- * - A record read that fails with nothing cached throws, unless Ethereum says proven or minted (those win).
- *   Otherwise the stage would be a guess.
+ * - A record read that fails with nothing cached doesn't throw (a bad kid shouldn't drop the rest of the
+ *   list): it falls back to no record, unless Ethereum says proven or minted (those win), and the error comes
+ *   back beside the trips.
  * - Ethereum failures don't throw. The last good client / status is used if there is one (both only move
  *   forward), else null, and the error comes back beside the trips.
  * - A failed send lookup falls back to memory, else unknown Hs (`crossing`), also reported beside the trips.
@@ -261,22 +262,27 @@ export async function loadTrips(ctx: Ctx, ids: readonly KidId[], known: Readonly
     let send: SendFacts | null = null
     let sentAt: Date | undefined
     if (record) {
-      let info: SendInfo | null
       if (k?.send !== undefined) {
-        info = k.send
-      } else {
-        const s = await settle(readSend(ctx, id))
-        if (s.ok) info = s.value
-        else {
-          info = ctx.qc.getQueryData<SendInfo | null>(keys.send(d, id)) ?? null
-          errors.push(s.error)
+        const info = k.send
+        if (info) {
+          send = { height: info.height, txHash: info.txHash, sender: info.sender }
+          sentAt = info.time
+        } else {
+          send = rememberedSend(rem, record)
         }
-      }
-      if (info) {
-        send = { height: info.height, txHash: info.txHash, sender: info.sender }
-        sentAt = info.time
       } else {
+        // not from live discovery: this id is only known locally, so try what this browser remembered before
+        // paying for a tx search, which is expensive and often unnecessary when the local send is sufficient.
         send = rememberedSend(rem, record)
+        if (!send) {
+          const s = await settle(readSend(ctx, id))
+          const info = s.ok ? s.value : (ctx.qc.getQueryData<SendInfo | null>(keys.send(d, id)) ?? null)
+          if (!s.ok) errors.push(s.error)
+          if (info) {
+            send = { height: info.height, txHash: info.txHash, sender: info.sender }
+            sentAt = info.time
+          }
+        }
       }
       if (send && !sentAt) {
         const b = await settle(readBlock(ctx, send.height))
@@ -309,11 +315,9 @@ export async function loadTrips(ctx: Ctx, ids: readonly KidId[], known: Readonly
   const done: KidId[] = []
   const trips = hubFacts.map(({ id, record, recordError, send, sentAt }) => {
     const eth = statuses.get(id) ?? null
-    // no record read: proven or minted still decides the stage; anything else would be a guess
-    if (recordError) {
-      if (!eth?.proven && !eth?.owner) throw recordError
-      errors.push(recordError)
-    }
+    // no record read: proven or minted still decides the stage; otherwise this kid's stage is a guess
+    // (falls back to no record), reported in error rather than failing every other kid in the list
+    if (recordError) errors.push(recordError)
     const stage = deriveStage({ record, sendHeight: send?.height ?? null, client, eth })
     let provingSince: Date | null = null
     if (stage === 'proving') provingSince = new Date(firstSeenProving(d, id, now))
@@ -370,7 +374,7 @@ export async function discoverTrips(ctx: Ctx, q: TripQueryKey): Promise<WithErro
     const eth = q.eth
     attempted++
     tasks.push(
-      settle(ctx.qc.query({ queryKey: keys.records(d), queryFn: () => ctx.hub.allRecords(), staleTime: SHARE_MS, retry: false })).then((r) => {
+      settle(ctx.qc.query({ queryKey: keys.records(d), queryFn: () => ctx.hub.allRecords(), staleTime: Infinity, retry: false })).then((r) => {
         if (!r.ok) {
           failed++
           errors.push(r.error)

@@ -50,7 +50,7 @@ describe('toEthError', () => {
   it('reads a mint of an existing token as already minted', () => {
     const data = encodeErrorResult({ abi: bridgeAbi, errorName: 'ERC721InvalidSender', args: [zeroAddress] })
     const e = toEthError(reverted(data), 3)
-    expect(e).toMatchObject({ code: 'NotProven', tokenId: 3 })
+    expect(e).toMatchObject({ code: 'AlreadyBridged', tokenId: 3 })
     expect(e.detail).toMatch(/already minted/)
   })
 

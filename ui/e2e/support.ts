@@ -78,7 +78,8 @@ export async function checkPage(page: Page, testInfo: TestInfo, name: string): P
 
 /** Closes any toasts, so they don't sit on top of a screenshot. */
 export async function dismissToasts(page: Page): Promise<void> {
-  for (const x of await page.locator('.toast .x').all()) await x.click()
+  const x = page.locator('.toast .x').first()
+  while (await x.count() > 0) await x.click()
 }
 
 /** The demo toolbar's "skip ahead": jumps to the next relay or proof. */

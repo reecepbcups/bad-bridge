@@ -207,26 +207,34 @@ export function createHubReader(deployment: Deployment, options: TransportOption
     }
   }
 
-  /** Searches REST first; a miss there asks one RPC node too, since tx indexes differ between nodes. */
+  /**
+   * Searches REST and RPC both, and merges: REST's indexer can be a partial or stale view (different node,
+   * indexer lag, pruning) next to RPC's, so finding something via REST alone isn't grounds to skip RPC. Either
+   * side being down just falls back to the other.
+   */
   async function findSends(query: string, order: 'asc' | 'desc', keep: (s: SendInfo) => boolean): Promise<SendInfo[]> {
     const esc = escrow()
     const sendsIn = (txs: SearchedTx[]) => txs.flatMap((tx) => bridgeSends(tx, esc)).filter(keep)
     const call = searchCall(query, order)
-    let restFailed: BridgeError | null = null
+    let rest: SendInfo[] | null = null
     try {
-      const found = sendsIn(await t.run('tx search', { rest: call.rest }))
-      if (found.length > 0) return found
+      rest = sendsIn(await t.run('tx search', { rest: call.rest }))
     } catch (e) {
       if (!(e instanceof BridgeError && e.code === 'Network')) throw e
-      restFailed = e
     }
+    let rpc: SendInfo[] | null = null
     try {
-      return sendsIn(await t.run('tx search', { rpc: call.rpc }))
+      rpc = sendsIn(await t.run('tx search', { rpc: call.rpc }))
     } catch (e) {
-      // REST answered (with nothing) and RPC is down: nothing is the answer
-      if (!restFailed && e instanceof BridgeError && e.code === 'Network') return []
+      // REST answered (maybe with nothing) and RPC is down: REST's view is all there is
+      if (rest !== null && e instanceof BridgeError && e.code === 'Network') return rest
       throw e
     }
+    if (rest === null) return rpc
+    // both answered: merge and dedupe (a tx can hold more than one kid, so key on tx hash + kid)
+    const merged = new Map<string, SendInfo>()
+    for (const s of [...rest, ...rpc]) merged.set(`${s.txHash}:${s.tokenId}`, s)
+    return [...merged.values()]
   }
 
   return {

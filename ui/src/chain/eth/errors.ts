@@ -121,7 +121,7 @@ export function revertToBridgeError(revert: BridgeRevert, tokenId?: KidId, cause
     }
     // _mint on a token that exists: someone claimed it first
     case 'ERC721InvalidSender':
-      return new BridgeError('NotProven', `kid${tokenId === undefined ? '' : ` #${tokenId}`} is already minted`, { tokenId, cause })
+      return new BridgeError('AlreadyBridged', `kid${tokenId === undefined ? '' : ` #${tokenId}`} is already minted`, { tokenId, cause })
     default:
       return new BridgeError('Unknown', `bridge reverted with ${revert.errorName}`, { tokenId, cause })
   }

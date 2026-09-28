@@ -117,6 +117,8 @@ export interface SendResult {
 export interface ClaimResult {
   /** Ethereum tx hash. */
   txHash: Hex
+  /** Ids actually included in the successful claim (a Multicall3 batch can drop some; see sortClaimable). */
+  claimed: KidId[]
 }
 
 /** Read-only Hub queries (REST with RPC fallback in the real adapter). */
@@ -257,6 +259,8 @@ export type BridgeErrorCode =
   | 'BadRecipient'
   /** escrow: recipient is the zero address */
   | 'ZeroRecipient'
+  /** escrow: recipient is a well-formed burn or precompile address; a kid sent there could never move again */
+  | 'BurnRecipient'
   /** escrow: this kid already has a record */
   | 'AlreadyBridged'
   /** cw721: the sending wallet doesn't own this kid (moved since the list loaded, or no such token) */
@@ -265,6 +269,8 @@ export type BridgeErrorCode =
   | 'TooManyKids'
   /** send: the simulated gas or the fee is far above what a send costs, so a Hub endpoint is likely lying */
   | 'FeeTooHigh'
+  /** send: the offered fee is below what CheckTx wants right now; a gas-price problem, not a balance one */
+  | 'FeeTooLow'
   /** send: Ethereum's light client of the Hub is frozen, so nothing new can be proven */
   | 'ClientFrozen'
   /** bridge: claim before the proof landed */

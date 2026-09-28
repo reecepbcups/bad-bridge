@@ -1,3 +1,4 @@
+import { useIsMutating } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { useBridge } from '../../../chain/context'
 import { useClaimEstimate, useClaimKids } from '../../../trips/hooks'
@@ -40,7 +41,9 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
   const already = sent.ids.filter((id) => stageOf.get(id) === 'home-eth')
   const n = ready.length
   const estimate = useClaimEstimate(ready)
-  const pending = claim.status === 'pending'
+  // survives an unmount/remount of this step: a claim from before the remount still counts as pending
+  const claimMutating = useIsMutating({ mutationKey: ['bridge', deployment.id, 'claim'] }) > 0
+  const pending = claim.status === 'pending' || claimMutating
   // null only for the moment before the writer reports its first stage
   const stage = pending ? (claim.stage ?? 'signing') : null
 

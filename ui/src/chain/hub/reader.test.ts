@@ -196,10 +196,14 @@ describe('contractInfo', () => {
 
 describe('sendInfo', () => {
   it('finds the mainnet send of #2 from its events', async () => {
+    // REST finds it; RPC is still queried too (merged, deduped), but comes up empty on its own index
     const { hub, calls } = reader((req) => {
-      expect(req.url.pathname).toBe('/cosmos/tx/v1beta1/txs')
-      expect(req.url.searchParams.get('query')).toBe(`wasm._contract_address='${ESCROW}' AND wasm.token_id='2'`)
-      return searchAnswer(req, { '1': [restTx(TX2, 33092461, [sendNftEvent('2'), bridgeEvent('2')])] })
+      if (req.url.origin === REST) {
+        expect(req.url.pathname).toBe('/cosmos/tx/v1beta1/txs')
+        expect(req.url.searchParams.get('query')).toBe(`wasm._contract_address='${ESCROW}' AND wasm.token_id='2'`)
+        return searchAnswer(req, { '1': [restTx(TX2, 33092461, [sendNftEvent('2'), bridgeEvent('2')])] })
+      }
+      return rpcResult({ txs: [], total_count: '0' })
     })
     await expect(hub.sendInfo(2)).resolves.toEqual({
       tokenId: 2,
@@ -209,7 +213,8 @@ describe('sendInfo', () => {
       recipient: RECIPIENT,
       time: new Date('2026-09-23T21:17:43Z'),
     })
-    expect(calls).toHaveLength(1)
+    // one REST page, plus one RPC node (the other never gets asked since the first answered)
+    expect(calls.map((c) => c.url.origin)).toEqual([REST, RPC_A])
   })
 
   it("doesn't trust a hit whose conditions matched different events", async () => {
@@ -243,9 +248,13 @@ describe('sendInfo', () => {
   it('pages REST search results using total', async () => {
     const noise = Array.from({ length: 100 }, (_, i) => restTx(hash(100 + i), 50 + i, [sendNftEvent('4', 0, 'cosmos1x')]))
     const real = restTx(hash(7), 300, [bridgeEvent('4')])
-    const { hub, calls } = reader((req) => searchAnswer(req, { '1': noise, '2': [real] }, 101))
+    const { hub, calls } = reader((req) => {
+      if (req.url.origin === REST) return searchAnswer(req, { '1': noise, '2': [real] }, 101)
+      return rpcResult({ txs: [], total_count: '0' })
+    })
     await expect(hub.sendInfo(4)).resolves.toMatchObject({ tokenId: 4, height: 300 })
-    expect(calls.map((c) => c.url.searchParams.get('page'))).toEqual(['1', '2'])
+    // two REST pages, then one RPC node with nothing more to add (no `page` query param on an RPC call)
+    expect(calls.map((c) => c.url.searchParams.get('page'))).toEqual(['1', '2', null])
     expect(calls[0]?.url.searchParams.get('limit')).toBe('100')
   })
 })
@@ -263,9 +272,12 @@ describe('sendsBy', () => {
     // someone else's send that shares the tx: not REECE's
     const mixed = restTx(hash(3), 250, [bridgeEvent('11', 0, 'cosmos1someoneelse')])
     const { hub, calls } = reader((req) => {
-      expect(req.url.searchParams.get('query')).toBe(`wasm._contract_address='${ESCROW}' AND wasm.from='${REECE}'`)
-      expect(req.url.searchParams.get('order_by')).toBe('ORDER_BY_DESC')
-      return searchAnswer(req, { '1': [multi, mixed, older] })
+      if (req.url.origin === REST) {
+        expect(req.url.searchParams.get('query')).toBe(`wasm._contract_address='${ESCROW}' AND wasm.from='${REECE}'`)
+        expect(req.url.searchParams.get('order_by')).toBe('ORDER_BY_DESC')
+        return searchAnswer(req, { '1': [multi, mixed, older] })
+      }
+      return rpcResult({ txs: [], total_count: '0' })
     })
     const sends = await hub.sendsBy(REECE)
     expect(sends.map((s) => [s.tokenId, s.height])).toEqual([
@@ -274,7 +286,8 @@ describe('sendsBy', () => {
       [4, 200],
     ])
     expect(sends[0]?.time?.toISOString()).toBe('2026-09-21T00:00:00.123Z')
-    expect(calls).toHaveLength(1)
+    // one REST page, plus one RPC node queried alongside it
+    expect(calls.map((c) => c.url.origin)).toEqual([REST, RPC_A])
   })
 })
 

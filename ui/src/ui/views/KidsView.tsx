@@ -23,6 +23,10 @@ import './tracker.css'
 // The tracker: every kid headed to an address (or sent by one), wherever it is on the bridge.
 // #/kids uses the connected wallets plus kids this browser sent; #/kids/<address> looks one address up.
 
+// Cap on ids batched into one "claim all" tx, so a big ready list can't blow the block gas limit.
+// TODO(confirm): 40 is a guess, not measured against real per-mint claim gas cost.
+const CLAIM_BATCH_CAP = 40
+
 export function KidsView({ address }: { address?: string }) {
   const { deployment, hubWallet, ethWallet } = useBridge()
   const remembered = useRememberedTrips()
@@ -57,6 +61,7 @@ export function KidsView({ address }: { address?: string }) {
 
   const list = trips.data ?? []
   const ready = list.filter((t) => t.stage === 'ready')
+  const claimableNow = ready.slice(0, CLAIM_BATCH_CAP)
   const home = list.filter((t) => t.stage === 'home-eth').length
   const crossingTrips = list.filter((t) => inFlight(t.stage))
   const crossing = crossingTrips.length
@@ -75,7 +80,8 @@ export function KidsView({ address }: { address?: string }) {
             ? 'Every kid headed to your Ethereum address, wherever it is on the bridge.'
             : 'Every kid headed to this Ethereum address, wherever it is on the bridge.'}
       </p>
-      <LookupBox initial={address ?? connectedEth ?? ''} />
+      {/* key remounts the box when the known identity changes (e.g. lazy wallet connect), so it picks up the new initial value */}
+      <LookupBox key={address ?? connectedEth ?? ''} initial={address ?? connectedEth ?? ''} />
 
       {lookup?.kind === 'bad' && (
         <p className="hint bad" role="alert">
@@ -125,8 +131,12 @@ export function KidsView({ address }: { address?: string }) {
               {home > 0 && <span className="pill home">{home} home</span>}
             </div>
             {ready.length > 1 && (
-              <ClaimButton ids={ready.map((t) => t.tokenId)} flow={claim}>
-                {ready.length === 2 ? 'Claim both' : `Claim all ${ready.length}`}
+              <ClaimButton ids={claimableNow.map((t) => t.tokenId)} flow={claim}>
+                {ready.length > CLAIM_BATCH_CAP
+                  ? `Claim ${CLAIM_BATCH_CAP} of ${ready.length}`
+                  : ready.length === 2
+                    ? 'Claim both'
+                    : `Claim all ${ready.length}`}
               </ClaimButton>
             )}
           </div>

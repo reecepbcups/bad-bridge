@@ -25,6 +25,7 @@ import {
   type SendResult,
   type SendStage,
 } from '../types'
+import { checkRecipient } from '../eth/recipient'
 import { buildNudgeMsg, buildSendMsgs, MSG_TRANSFER, type ExecuteEncodeObject, type TransferEncodeObject } from './encode'
 import { chainLogToBridgeError, toHubError, walletErrorToBridgeError } from './errors'
 import { toHeight } from './events'
@@ -109,12 +110,15 @@ export function computeFee(gasUsed: bigint, gasPrice: string): { gas: bigint; fe
   return { gas, fee: (numer + denom - 1n) / denom }
 }
 
-/** `price`, or MAX_GAS_PRICE if it's higher. */
+/** `price`, or throws FeeTooHigh if it's above MAX_GAS_PRICE: a feemarket price that high needs a real fee, not a silently capped one. */
 export function clampGasPrice(price: string): string {
   const p = parseDecimal(price)
   const max = parseDecimal(MAX_GAS_PRICE)
   if (!p || !max) return MAX_GAS_PRICE
-  return p.num * max.den > max.num * p.den ? MAX_GAS_PRICE : price
+  if (p.num * max.den > max.num * p.den) {
+    throw new BridgeError('FeeTooHigh', `feemarket gas price ${price} is above the ${MAX_GAS_PRICE} ceiling`)
+  }
+  return price
 }
 
 /**
@@ -284,9 +288,15 @@ type Lookup = { found: false } | { found: true; height: number; code: number; lo
 
 const NOT_FOUND = /not found/i
 
-/** One look for a tx by hash: REST, then each RPC node. Not found anywhere reachable → { found: false }. */
-async function lookupTx(http: Http, rest: readonly string[], rpc: readonly string[], hash: string): Promise<Lookup> {
+/**
+ * One look for a tx by hash: REST, then each RPC node. A "not found" from one endpoint doesn't mean not found
+ * everywhere (indexer lag, pruning), so it keeps trying the rest instead of giving up early; `deadline` (Date.now()
+ * ms) stops it from trying further endpoints once the caller's budget is spent, since each endpoint has its own
+ * timeout and REST+RPC together can otherwise run well past it. Not found anywhere reachable → { found: false }.
+ */
+async function lookupTx(http: Http, rest: readonly string[], rpc: readonly string[], hash: string, deadline: number): Promise<Lookup> {
   for (const base of rest) {
+    if (Date.now() > deadline) return { found: false }
     try {
       const body = await http.get(`${base}/cosmos/tx/v1beta1/txs/${hash}`)
       const r = isRecord(body) && isRecord(body.tx_response) ? body.tx_response : null
@@ -294,10 +304,12 @@ async function lookupTx(http: Http, rest: readonly string[], rpc: readonly strin
       if (!r || height === null) continue
       return { found: true, height, code: typeof r.code === 'number' ? r.code : 0, log: typeof r.raw_log === 'string' ? r.raw_log : '' }
     } catch (e) {
-      if (e instanceof ChainError && (e.code === 5 || NOT_FOUND.test(e.message))) return { found: false }
+      // not found here doesn't mean not found on another endpoint; keep going (same for a genuine EndpointError)
+      if (!(e instanceof ChainError && (e.code === 5 || NOT_FOUND.test(e.message)))) continue
     }
   }
   for (const base of rpc) {
+    if (Date.now() > deadline) return { found: false }
     try {
       const r = await http.rpc(base, 'tx', { hash: toBase64(fromHex(hash)), prove: false })
       const height = isRecord(r) ? toHeight(r.height) : null
@@ -305,7 +317,7 @@ async function lookupTx(http: Http, rest: readonly string[], rpc: readonly strin
       if (height === null || !result) continue
       return { found: true, height, code: typeof result.code === 'number' ? result.code : 0, log: typeof result.log === 'string' ? result.log : '' }
     } catch (e) {
-      if (e instanceof EndpointError && NOT_FOUND.test(e.message)) return { found: false }
+      if (!(e instanceof EndpointError && NOT_FOUND.test(e.message))) continue
     }
   }
   return { found: false }
@@ -341,6 +353,14 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
 
   async function prepare(ids: readonly KidId[], recipient: EthAddress): Promise<Prepared> {
     if (!hub.escrow) throw new BridgeError('NotLive', `${deployment.collectionName} has no escrow on the Hub yet`)
+    // buildSendMsgs only checks format/zero; layer on the burn/precompile check too, so the send path can't be
+    // reached with a recipient the lookup page would have refused
+    const check = checkRecipient(recipient)
+    if (!check.ok) {
+      if (check.reason === 'zero') throw new BridgeError('ZeroRecipient', 'recipient is the zero address')
+      if (check.reason === 'burn') throw new BridgeError('BurnRecipient', 'recipient is a burn or precompile address: a kid sent there could never move again')
+      throw new BridgeError('BadRecipient', `recipient fails ${check.reason} validation`)
+    }
     // validates ids and recipient (20 bytes, not zero) before any network or wallet
     const msgs = buildSendMsgs(address, hub.cw721, hub.escrow, ids, recipient)
     const account = await getAccount(t, address)
@@ -372,7 +392,7 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
     const rest = hub.rest.map(strip)
     const rpc = hub.rpc.map(strip)
     for (;;) {
-      const seen = await lookupTx(t.http, rest, rpc, hash)
+      const seen = await lookupTx(t.http, rest, rpc, hash, deadline)
       if (seen.found) {
         if (seen.code !== 0) throw chainLogToBridgeError(seen.log || `tx ${hash} failed with code ${seen.code}`, ids)
         return { txHash: hash, height: seen.height }

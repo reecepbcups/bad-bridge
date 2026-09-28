@@ -31,12 +31,12 @@ describe('chain logs → BridgeError', () => {
     ['already bridged, by message index', exec(1, 'token 3 already bridged'), [1, 3], 'AlreadyBridged', 3],
     ['already bridged, no index', 'token 3 already bridged', [], 'AlreadyBridged', 3],
     ['no ATOM', 'spendable balance 0uatom is smaller than 2344uatom: insufficient funds', [1], 'InsufficientFunds', undefined],
-    ['fee too low', 'insufficient fees; got: 100uatom required: 2344uatom: insufficient fee', [1], 'InsufficientFunds', undefined],
+    ['fee too low', 'insufficient fees; got: 100uatom required: 2344uatom: insufficient fee', [1], 'FeeTooLow', undefined],
     [
       'feemarket fee too low',
       'got: 0uatom required: 1563uatom, minGasPrice: 0.005000000000000000uatom: insufficient fee',
       [1],
-      'InsufficientFunds',
+      'FeeTooLow',
       undefined,
     ],
     [

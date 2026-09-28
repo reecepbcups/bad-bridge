@@ -150,6 +150,7 @@ export function useSendKids(options?: SendKidsOptions): SendKidsState {
   const [stage, setStage] = useState<SendStage | null>(null)
   const onStage = useLatest(options?.onStage)
   const m = useMutation({
+    mutationKey: ['bridge', ctx.deployment.id, 'send'] as const,
     mutationFn: async ([ids, recipient]: [readonly KidId[], EthAddress]) => {
       setStage(null)
       if (!hubWriter) throw new BridgeError('Unknown', 'Hub wallet not connected')
@@ -182,6 +183,7 @@ export function useClaimKids(options?: ClaimKidsOptions): ClaimKidsState {
   const [stage, setStage] = useState<ClaimStage | null>(null)
   const onStage = useLatest(options?.onStage)
   const m = useMutation({
+    mutationKey: ['bridge', ctx.deployment.id, 'claim'] as const,
     mutationFn: async ([ids]: [readonly KidId[]]) => {
       setStage(null)
       if (!ethWriter) throw new BridgeError('Unknown', 'Ethereum wallet not connected')
@@ -251,14 +253,15 @@ export function useSendEstimate(ids: readonly KidId[], recipient: EthAddress | n
  * The startup check behind Send: the escrow accepts our cw721, bridge.ESCROW() is our escrow (32 bytes), and the
  * bridge reaches the configured light client through the pinned Eureka router, following the Hub's chain id.
  * Send only when data?.ok === true: no data (loading), `unknown` (a read failed; error says why, re-checked
- * every 30s), `mismatch` and `not-live` all mean no. A definitive answer is cached for the session.
+ * every 30s), `mismatch` and `not-live` all mean no. A definitive answer is re-checked at most every POLL_MS,
+ * so escrow/wiring changing server-side mid-session doesn't stay cached for the rest of the tab's life.
  */
 export function useConfigSanity(): QueryState<ConfigSanity> {
   const { deployment, hub, eth } = useBridge()
   return toQueryState(
     useQuery({
       queryKey: keys.sanity(deployment.id),
-      staleTime: Infinity,
+      staleTime: POLL_MS,
       retry: false,
       refetchInterval: (query) => (query.state.data?.value.status === 'unknown' ? POLL_MS : false),
       queryFn: async (): Promise<WithError<ConfigSanity>> => {

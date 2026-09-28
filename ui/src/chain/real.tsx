@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { Deployment } from '../config/deployments'
+import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { BridgeContext, type BridgeContextValue } from './context'
 import { createEthReader } from './eth/reader'
 import { createHubReader } from './hub/reader'
@@ -36,9 +37,11 @@ export default function RealBridgeProvider({ deployment, children }: { deploymen
   return (
     <>
       {/* a sibling, not a parent: when it arrives, nothing below re-mounts */}
-      <Suspense fallback={null}>
-        <RealWallets deployment={deployment} onChange={onWallets} />
-      </Suspense>
+      <ErrorBoundary fallback={() => null}>
+        <Suspense fallback={null}>
+          <RealWallets deployment={deployment} onChange={onWallets} />
+        </Suspense>
+      </ErrorBoundary>
       <BridgeContext.Provider value={value}>{children}</BridgeContext.Provider>
     </>
   )

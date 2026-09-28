@@ -41,7 +41,7 @@ describe('ethWalletOptions', () => {
 })
 
 function setup(features?: Parameters<typeof mock>[0]['features']) {
-  // the mock wallet starts on Sepolia, so connecting has to switch it to mainnet
+  // the mock wallet starts on Sepolia; switching to mainnet is a separate step after connect
   const config: Config = createConfig({
     chains: [sepolia, mainnet],
     connectors: [mock({ accounts: [ACCOUNT], features })],
@@ -67,8 +67,12 @@ describe('useEthWallet / useEthWriter', () => {
 
     await act(() => hook.result.current.wallet.connect('mock'))
     await waitFor(() => expect(hook.result.current.wallet.status).toBe('connected'))
-    expect(hook.result.current.wallet).toMatchObject({ address: ACCOUNT, walletName: 'Mock Connector', wrongChain: false })
+    // connect() no longer passes chainId, so the mock wallet stays on Sepolia until switchChain runs separately
+    expect(hook.result.current.wallet).toMatchObject({ address: ACCOUNT, walletName: 'Mock Connector', wrongChain: true })
     expect(hook.result.current.writer?.address).toBe(ACCOUNT)
+
+    await act(() => hook.result.current.wallet.switchChain!())
+    await waitFor(() => expect(hook.result.current.wallet.wrongChain).toBe(false))
 
     await act(() => hook.result.current.wallet.disconnect())
     await waitFor(() => expect(hook.result.current.wallet.status).toBe('disconnected'))

@@ -28,7 +28,7 @@ export default defineConfig({
     // this is the build users get, where ?demo is ignored.
     command: `pnpm build && pnpm exec vite preview --port ${PORT} --strictPort`,
     cwd: UI,
-    env: { VITE_DEPLOYMENT: 'reece-test', VITE_ALLOW_DEMO: '' },
+    env: { VITE_DEPLOYMENT: 'reece-test', VITE_ALLOW_DEMO: '', VITE_WC_PROJECT_ID: '' },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

@@ -108,7 +108,7 @@ interface SimEvent {
 /** Where an injected failure can surface. Codes only fire where a real chain could throw them. */
 type Site = 'simulate' | 'sign' | 'claim' | 'connect'
 const FAILS_AT: Record<Site, readonly BridgeErrorCode[]> = {
-  simulate: ['WrongCollection', 'BadTokenId', 'BadRecipient', 'ZeroRecipient', 'AlreadyBridged', 'InsufficientFunds', 'Network', 'Unknown'],
+  simulate: ['WrongCollection', 'BadTokenId', 'BadRecipient', 'ZeroRecipient', 'AlreadyBridged', 'NotOwner', 'InsufficientFunds', 'Network', 'Unknown'],
   sign: ['UserRejected', 'WrongChain', 'Network', 'Unknown'],
   claim: ['NotProven', 'UserRejected', 'WrongChain', 'InsufficientFunds', 'Network', 'Unknown'],
   connect: ['UserRejected', 'WrongChain', 'Unknown'],
@@ -377,7 +377,7 @@ export class DemoSim {
     for (const id of mintable) this.ethOwners.set(id, this.proven.get(id)!)
     const txHash = hash(`demo:claim:${++this.txCount}`)
     this.emit()
-    return { txHash }
+    return { txHash, claimed: mintable }
   }
 
   beginConnect(chain: DemoChain): void {
@@ -492,7 +492,7 @@ export class DemoSim {
     for (const id of ids) {
       if (!Number.isInteger(id) || id < 0 || id > 0xffff_ffff) throw new BridgeError('BadTokenId', String(id))
       if (this.records.has(id)) throw new BridgeError('AlreadyBridged', `demo: #${id}`, { tokenId: id })
-      if (this.hubOwners.get(id) !== sender) throw new BridgeError('Unknown', `demo: ${sender} doesn't own #${id}`, { tokenId: id })
+      if (this.hubOwners.get(id) !== sender) throw new BridgeError('NotOwner', `demo: ${sender} doesn't own #${id}`, { tokenId: id })
     }
   }
 

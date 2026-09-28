@@ -22,7 +22,7 @@ function requireDeployment(): Plugin {
     apply: 'build',
     configResolved(config) {
       const id: unknown = config.env.VITE_DEPLOYMENT
-      if (config.mode === 'production' && (typeof id !== 'string' || !id.trim())) {
+      if (typeof id !== 'string' || !id.trim()) {
         throw new Error('VITE_DEPLOYMENT must be set for a production build (reece-test, badkids or demo), e.g. `pnpm build:reece-test`.')
       }
     },

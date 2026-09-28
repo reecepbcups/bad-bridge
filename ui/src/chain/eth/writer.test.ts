@@ -111,9 +111,9 @@ describe('claim', () => {
     expect(chain.sent).toHaveLength(0)
   })
 
-  it('maps an already-minted simulation revert to NotProven', async () => {
+  it('maps an already-minted simulation revert to AlreadyBridged', async () => {
     const err = await writer({ reader: staleReader }).claim([4]).catch((e: unknown) => e)
-    expect(err).toMatchObject({ code: 'NotProven', tokenId: 4 })
+    expect(err).toMatchObject({ code: 'AlreadyBridged', tokenId: 4 })
     expect((err as BridgeError).detail).toMatch(/already minted/)
   })
 
