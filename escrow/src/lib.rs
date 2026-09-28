@@ -4,14 +4,19 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, Binary, Deps, DepsMut, Env, HexBinary, MessageInfo,
-    Response, StdResult,
+    Response, StdResult, WasmMsg,
 };
 use cw_storage_plus::Item;
 
 /// Raw record key prefix. Full key is `b"b" || token_id (u32 BE)`, value is the 20-byte ETH address.
+/// This exact layout is what BadBridge.sol's SP1 membership proof parses, so it must never change.
 pub const RECORD_PREFIX: u8 = b'b';
+/// Original Cosmos sender per token id, for EmergencyUnlock refunds. Kept under its own prefix
+/// so it never appears in the record BadBridge.sol proves membership against.
+pub const SENDER_PREFIX: u8 = b's';
 
 const CW721: Item<Addr> = Item::new("cw721");
+const ADMIN: Item<Addr> = Item::new("admin");
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum ContractError {
@@ -27,11 +32,17 @@ pub enum ContractError {
     ZeroRecipient,
     #[error("token {0} already bridged")]
     AlreadyBridged(u32),
+    #[error("unauthorized")]
+    Unauthorized,
+    #[error("token {0} is not currently escrowed")]
+    NotEscrowed(u32),
 }
 
 #[cw_serde]
 pub struct InstantiateMsg {
     pub cw721: String,
+    /// Sole address allowed to call EmergencyUnlock.
+    pub admin: String,
 }
 
 /// cw721 receiver hook payload, inlined to avoid depending on a specific cw721 version.
@@ -46,6 +57,18 @@ pub struct Cw721ReceiveMsg {
 #[cw_serde]
 pub enum ExecuteMsg {
     ReceiveNft(Cw721ReceiveMsg),
+    /// Admin-only. Returns the given escrowed tokens to the Cosmos address that sent them,
+    /// bypassing the Ethereum leg entirely. The caller must confirm off-chain (e.g. against
+    /// BadBridge.sol's `Proven` events) that none of the listed token ids were already proven
+    /// there: a proof submitted before this call can still be claimed on Ethereum after the
+    /// refund, minting the same token twice across chains.
+    EmergencyUnlock { token_ids: Vec<u32> },
+}
+
+/// cw721 TransferNft payload, inlined for the same reason as Cw721ReceiveMsg above.
+#[cw_serde]
+enum Cw721ExecuteMsg {
+    TransferNft { recipient: String, token_id: String },
 }
 
 #[cw_serde]
@@ -72,17 +95,31 @@ pub fn record_key(token_id: u32) -> Vec<u8> {
     k
 }
 
+pub fn sender_key(token_id: u32) -> Vec<u8> {
+    let mut k = Vec::with_capacity(5);
+    k.push(SENDER_PREFIX);
+    k.extend_from_slice(&token_id.to_be_bytes());
+    k
+}
+
 #[entry_point]
 pub fn instantiate(deps: DepsMut, _env: Env, _info: MessageInfo, msg: InstantiateMsg) -> Result<Response, ContractError> {
     let cw721 = deps.api.addr_validate(&msg.cw721)?;
+    let admin = deps.api.addr_validate(&msg.admin)?;
     CW721.save(deps.storage, &cw721)?;
-    Ok(Response::new().add_attribute("cw721", cw721))
+    ADMIN.save(deps.storage, &admin)?;
+    Ok(Response::new().add_attribute("cw721", cw721).add_attribute("admin", admin))
 }
 
 #[entry_point]
 pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg) -> Result<Response, ContractError> {
-    let ExecuteMsg::ReceiveNft(rcv) = msg;
+    match msg {
+        ExecuteMsg::ReceiveNft(rcv) => receive_nft(deps, info, rcv),
+        ExecuteMsg::EmergencyUnlock { token_ids } => emergency_unlock(deps, info, token_ids),
+    }
+}
 
+fn receive_nft(deps: DepsMut, info: MessageInfo, rcv: Cw721ReceiveMsg) -> Result<Response, ContractError> {
     let expected = CW721.load(deps.storage)?;
     if info.sender != expected {
         return Err(ContractError::WrongCollection { expected });
@@ -107,12 +144,45 @@ pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg) -> 
         return Err(ContractError::AlreadyBridged(token_id));
     }
     deps.storage.set(&key, rcv.msg.as_slice());
+    deps.storage.set(&sender_key(token_id), rcv.sender.as_bytes());
 
     Ok(Response::new()
         .add_attribute("action", "bridge")
         .add_attribute("token_id", token_id.to_string())
         .add_attribute("from", rcv.sender)
         .add_attribute("eth_recipient", HexBinary::from(rcv.msg.as_slice()).to_hex()))
+}
+
+/// Admin-only escape hatch. See ExecuteMsg::EmergencyUnlock for the double-spend caveat. All-or-
+/// nothing over `token_ids`: an id that isn't currently escrowed fails the whole call, so a typo
+/// can't silently unlock a different set than the admin intended.
+fn emergency_unlock(deps: DepsMut, info: MessageInfo, token_ids: Vec<u32>) -> Result<Response, ContractError> {
+    if info.sender != ADMIN.load(deps.storage)? {
+        return Err(ContractError::Unauthorized);
+    }
+    let cw721 = CW721.load(deps.storage)?;
+
+    let mut msgs = Vec::with_capacity(token_ids.len());
+    for token_id in &token_ids {
+        let skey = sender_key(*token_id);
+        let sender = deps.storage.get(&skey).ok_or(ContractError::NotEscrowed(*token_id))?;
+        let recipient = String::from_utf8(sender)
+            .map_err(|_| cosmwasm_std::StdError::generic_err(format!("corrupt sender record for token {token_id}")))?;
+
+        deps.storage.remove(&record_key(*token_id));
+        deps.storage.remove(&skey);
+
+        msgs.push(WasmMsg::Execute {
+            contract_addr: cw721.to_string(),
+            msg: to_json_binary(&Cw721ExecuteMsg::TransferNft { recipient, token_id: token_id.to_string() })?,
+            funds: vec![],
+        });
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "emergency_unlock")
+        .add_attribute("count", token_ids.len().to_string())
+        .add_messages(msgs))
 }
 
 /// Only reachable while a contract admin exists, i.e. test deployments. Production is instantiated with no admin.
@@ -156,16 +226,26 @@ mod tests {
     use cosmwasm_std::testing::{message_info, mock_dependencies, mock_env};
     use cosmwasm_std::Storage;
 
-    fn setup() -> (cosmwasm_std::OwnedDeps<cosmwasm_std::MemoryStorage, cosmwasm_std::testing::MockApi, cosmwasm_std::testing::MockQuerier>, Addr) {
+    fn setup() -> (cosmwasm_std::OwnedDeps<cosmwasm_std::MemoryStorage, cosmwasm_std::testing::MockApi, cosmwasm_std::testing::MockQuerier>, Addr, Addr) {
         let mut deps = mock_dependencies();
         let cw721 = deps.api.addr_make("cw721");
         let admin = deps.api.addr_make("admin");
-        instantiate(deps.as_mut(), mock_env(), message_info(&admin, &[]), InstantiateMsg { cw721: cw721.to_string() }).unwrap();
-        (deps, cw721)
+        instantiate(
+            deps.as_mut(),
+            mock_env(),
+            message_info(&admin, &[]),
+            InstantiateMsg { cw721: cw721.to_string(), admin: admin.to_string() },
+        )
+        .unwrap();
+        (deps, cw721, admin)
     }
 
     fn rcv(token_id: &str, msg: &[u8]) -> ExecuteMsg {
-        ExecuteMsg::ReceiveNft(Cw721ReceiveMsg { sender: "holder".into(), token_id: token_id.into(), msg: Binary::from(msg) })
+        rcv_from("holder", token_id, msg)
+    }
+
+    fn rcv_from(sender: &str, token_id: &str, msg: &[u8]) -> ExecuteMsg {
+        ExecuteMsg::ReceiveNft(Cw721ReceiveMsg { sender: sender.into(), token_id: token_id.into(), msg: Binary::from(msg) })
     }
 
     #[test]
@@ -181,7 +261,7 @@ mod tests {
             ("zero recipient", "1", &[0u8; 20], Some(ContractError::ZeroRecipient)),
         ];
         for (name, id, msg, want) in cases {
-            let (mut deps, cw721) = setup();
+            let (mut deps, cw721, _admin) = setup();
             let got = execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv(id, msg));
             match want {
                 None => {
@@ -195,7 +275,7 @@ mod tests {
 
     #[test]
     fn rejects_wrong_collection_and_replays() {
-        let (mut deps, cw721) = setup();
+        let (mut deps, cw721, _admin) = setup();
         let stranger = deps.api.addr_make("stranger");
         let err = execute(deps.as_mut(), mock_env(), message_info(&stranger, &[]), rcv("1", &[1; 20])).unwrap_err();
         assert_eq!(err, ContractError::WrongCollection { expected: cw721.clone() });
@@ -207,7 +287,7 @@ mod tests {
 
     #[test]
     fn pending_pages_in_token_order() {
-        let (mut deps, cw721) = setup();
+        let (mut deps, cw721, _admin) = setup();
         for id in ["5", "1", "7012", "3"] {
             execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv(id, &[1; 20])).unwrap();
         }
@@ -223,7 +303,7 @@ mod tests {
 
     #[test]
     fn only_canonical_token_ids() {
-        let (mut deps, cw721) = setup();
+        let (mut deps, cw721, _admin) = setup();
         // xorshift, deterministic without pulling in a rand dep
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
         for _ in 0..2000 {
@@ -245,5 +325,93 @@ mod tests {
     #[test]
     fn record_key_layout() {
         assert_eq!(record_key(7012), vec![b'b', 0x00, 0x00, 0x1b, 0x64]);
+    }
+
+    #[test]
+    fn emergency_unlock_requires_admin() {
+        let (mut deps, cw721, _admin) = setup();
+        execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv("1", &[1; 20])).unwrap();
+
+        let stranger = deps.api.addr_make("stranger");
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            message_info(&stranger, &[]),
+            ExecuteMsg::EmergencyUnlock { token_ids: vec![1] },
+        )
+        .unwrap_err();
+        assert_eq!(err, ContractError::Unauthorized);
+    }
+
+    #[test]
+    fn emergency_unlock_refunds_original_senders_and_clears_records() {
+        let (mut deps, cw721, admin) = setup();
+        execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv_from("alice", "1", &[1; 20])).unwrap();
+        execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv_from("bob", "2", &[2; 20])).unwrap();
+
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            message_info(&admin, &[]),
+            ExecuteMsg::EmergencyUnlock { token_ids: vec![1, 2] },
+        )
+        .unwrap();
+
+        let want = [("alice", "1"), ("bob", "2")].map(|(recipient, token_id)| {
+            cosmwasm_std::CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: cw721.to_string(),
+                msg: to_json_binary(&Cw721ExecuteMsg::TransferNft { recipient: recipient.into(), token_id: token_id.into() }).unwrap(),
+                funds: vec![],
+            })
+        });
+        assert_eq!(res.messages.iter().map(|m| m.msg.clone()).collect::<Vec<_>>(), want);
+
+        for token_id in [1u32, 2] {
+            assert!(deps.storage.get(&record_key(token_id)).is_none());
+            assert!(deps.storage.get(&sender_key(token_id)).is_none());
+        }
+        // already unlocked, so no longer escrowed
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            message_info(&admin, &[]),
+            ExecuteMsg::EmergencyUnlock { token_ids: vec![1] },
+        )
+        .unwrap_err();
+        assert_eq!(err, ContractError::NotEscrowed(1));
+    }
+
+    #[test]
+    fn emergency_unlock_only_touches_listed_ids() {
+        let (mut deps, cw721, admin) = setup();
+        for id in ["5", "1", "3"] {
+            execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv_from("holder", id, &[1; 20])).unwrap();
+        }
+        execute(
+            deps.as_mut(),
+            mock_env(),
+            message_info(&admin, &[]),
+            ExecuteMsg::EmergencyUnlock { token_ids: vec![1, 3] },
+        )
+        .unwrap();
+        assert_eq!(
+            pending(deps.as_ref(), None, None).into_iter().map(|r| r.token_id).collect::<Vec<_>>(),
+            vec![5]
+        );
+    }
+
+    #[test]
+    fn emergency_unlock_rejects_unknown_token_id() {
+        let (mut deps, cw721, admin) = setup();
+        execute(deps.as_mut(), mock_env(), message_info(&cw721, &[]), rcv("1", &[1; 20])).unwrap();
+
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            message_info(&admin, &[]),
+            ExecuteMsg::EmergencyUnlock { token_ids: vec![1, 404] },
+        )
+        .unwrap_err();
+        assert_eq!(err, ContractError::NotEscrowed(404));
     }
 }
