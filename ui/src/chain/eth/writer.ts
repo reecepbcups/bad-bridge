@@ -24,7 +24,7 @@ import {
 import { registerProgram as registerProgramImpl, requestGroth16Proof as requestGroth16ProofImpl, type ProofRequestProgress, type SuccinctStage } from '../succinct/client'
 import type { DecodedGroth16Proof } from '../succinct/proof'
 import { bridgeAbi } from './abi'
-import { depositProve as depositProveImpl, quoteProve as quoteProveImpl, swapEthForProve as swapEthForProveImpl, walletProveBalance as walletProveBalanceImpl } from './fundProve'
+import { depositProve as depositProveImpl, ethUsdPrice as ethUsdPriceImpl, quoteProve as quoteProveImpl, swapEthForProve as swapEthForProveImpl, walletProveBalance as walletProveBalanceImpl } from './fundProve'
 import { ethChain } from './client'
 import { toEthError } from './errors'
 import { assertKidId, createEthReader, requireBridge } from './reader'
@@ -84,6 +84,8 @@ export interface EthWriterWithBatch extends EthWriter {
   registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void>
   /** ETH the router wants for exactly `prove` PROVE (18 decimals) right now. */
   quoteProve(prove: bigint): Promise<bigint>
+  /** USD per ETH right now, for display only. */
+  ethUsdPrice(): Promise<number>
   /** PROVE held in the connected wallet, not the Succinct network balance. */
   walletProveBalance(): Promise<bigint>
   /** Buys exactly `prove` PROVE with ETH on Uniswap, into the connected wallet. Returns the tx hash. */
@@ -296,6 +298,13 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
     quoteProve: async (prove) => {
       try {
         return await quoteProveImpl(publicClient, prove)
+      } catch (e) {
+        throw toEthError(e)
+      }
+    },
+    ethUsdPrice: async () => {
+      try {
+        return await ethUsdPriceImpl(publicClient)
       } catch (e) {
         throw toEthError(e)
       }

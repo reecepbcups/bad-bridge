@@ -26,7 +26,7 @@ export function BridgeView() {
           <div>
             <b>Get PROVE first.</b>
             Crossing needs at least {formatUnits(PROVE_NEEDED, 18)} PROVE in your Succinct account. One proof costs about 0.33,
-            the same for 1 kid or 10, so this covers a few tries.
+            the same for 1 kid or 10.
             <span className="prove-gate-act">
               {ready.status === 'connect' && (
                 <ConnectButton chain="eth" className="btn eth small">

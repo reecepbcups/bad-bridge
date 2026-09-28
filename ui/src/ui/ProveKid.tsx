@@ -368,7 +368,7 @@ export type ProveReady =
   | { status: 'connect' }
   | { status: 'loading' }
   | { status: 'short'; balance: bigint; inWallet: bigint; refetch: () => void }
-  | { status: 'ok' }
+  | { status: 'ok'; balance: bigint }
 
 /**
  * Whether the connected Ethereum wallet has enough PROVE in its Succinct account to pay for a proof. 'skip'
@@ -390,6 +390,6 @@ export function useProveReady(): ProveReady {
   if (deployment.demo || !isLive(deployment)) return { status: 'skip' }
   if (!proveKid || !address) return { status: 'connect' }
   if (q.data === undefined) return { status: 'loading' }
-  if (q.data.network >= PROVE_NEEDED) return { status: 'ok' }
+  if (q.data.network >= PROVE_NEEDED) return { status: 'ok', balance: q.data.network }
   return { status: 'short', balance: q.data.network, inWallet: q.data.inWallet, refetch: () => void q.refetch() }
 }

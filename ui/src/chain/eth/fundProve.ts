@@ -9,6 +9,8 @@ import type { ReadClient, SignerClient } from './writer'
 export const PROVE_TOKEN: Address = '0x6bef15d938d4e72056ac92ea4bdd0d76b1c4ad29'
 const VAPP: Address = '0x5ad5bc4b18f7c173dce17a57682cb0dc8788951f'
 const WETH: Address = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+/** Chainlink ETH/USD, 8 decimals. Checked on mainnet 2026-09-28. */
+const ETH_USD_FEED: Address = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
 const QUOTER_V2: Address = '0x61fFE014bA17989E743c5F6cB21bF9697530B21e'
 const SWAP_ROUTER_02: Address = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45'
 /** The only WETH/PROVE pool with liquidity (1%). Thin, so big buys move the price a lot. */
@@ -21,6 +23,7 @@ const PERMIT_VALID_SECS = 30 * 60
 const RECEIPT_TIMEOUT_MS = 10 * 60_000
 
 const tokenAbi = parseAbi(['function balanceOf(address) view returns (uint256)', 'function nonces(address) view returns (uint256)'])
+const chainlinkAbi = parseAbi(['function latestRoundData() view returns (uint80, int256 answer, uint256, uint256, uint80)'])
 const quoterAbi = parseAbi([
   'function quoteExactOutputSingle((address tokenIn, address tokenOut, uint256 amount, uint24 fee, uint160 sqrtPriceLimitX96)) returns (uint256 amountIn, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)',
 ])
@@ -42,6 +45,12 @@ export async function quoteProve(client: ReadClient, prove: bigint): Promise<big
     args: [{ tokenIn: WETH, tokenOut: PROVE_TOKEN, amount: prove, fee: POOL_FEE, sqrtPriceLimitX96: 0n }],
   })
   return result[0]
+}
+
+/** USD per ETH from Chainlink, for showing a dollar figure only, never for math that moves funds. */
+export async function ethUsdPrice(client: ReadClient): Promise<number> {
+  const [, answer] = await readContract(client, { address: ETH_USD_FEED, abi: chainlinkAbi, functionName: 'latestRoundData' })
+  return Number(answer) / 1e8
 }
 
 /** PROVE held by `owner` in their wallet (not the Succinct network balance). */
