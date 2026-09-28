@@ -1,0 +1,19 @@
+.tabs { display: flex; gap: 6px; border-bottom: 2.5px solid var(--ink); }
+.tab {
+  font: 700 22px/1 var(--display); color: var(--ink-soft); background: none; cursor: pointer; text-decoration: none;
+  border: 2.5px solid transparent; border-bottom: 0; border-radius: 14px 14px 0 0;
+  padding: 9px 16px 8px; margin-bottom: -2.5px; display: inline-flex; align-items: center; gap: 8px;
+  text-align: center; /* the mockup's tabs were buttons, which center wrapped labels */
+}
+.tab[aria-current="page"] {
+  color: var(--ink); border-color: var(--ink); background: var(--paper);
+  border-radius: var(--wobble-2); border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+}
+.badge { font: 700 13px/1 var(--body); background: var(--sun); color: var(--sun-ink); border: 2px solid var(--ink); border-radius: 99px; padding: 3px 7px; }
+
+/* one line on phones: "Bridge a kid" used to wrap under its neighbours */
+@media (max-width: 520px) {
+  .tabs { gap: 2px; }
+  .tab { white-space: nowrap; font-size: 18px; padding: 12px 9px; gap: 5px; }
+  .badge { padding: 2px 6px; }
+}

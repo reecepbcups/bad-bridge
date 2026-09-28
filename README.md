@@ -57,6 +57,11 @@ Tested on an Anvil mainnet fork first with a real Groth16 proof.
   - mint 1: https://www.mintscan.io/cosmos/tx/E49125904DF4517574D7B9639C0244A61F6999DC53E511B64C6C15F20E813E2F
   - mint 2: https://www.mintscan.io/cosmos/tx/262982BA52AF8EE81D966E73B84B115ED5580900CD8082A736FAF8151D333938
   - mint 3: https://www.mintscan.io/cosmos/tx/F9471AB9EA96DE612EDDC243F73836C68E0C3A1D24933A7F296951C54723F165
+  - mint 4: https://www.mintscan.io/cosmos/tx/42EBEBA6524A79C2CBED1ED00573CF76DCF36E705962D1DE3EF27D927022D59B
+  - mint 5: https://www.mintscan.io/cosmos/tx/EBA0AE761209D431758F0A810347C122383314ADFAF4ED7F4AFA131DE3646B27
+  - mint 6: https://www.mintscan.io/cosmos/tx/320C03938AF5B3D1651825BF256A564351D06E73CDA65CBA2533904B84600520
+  - mint 7: https://www.mintscan.io/cosmos/tx/8FE3313718F60749BCB3798ED08B13537E1737D3A9C497AC21ACEE31F7B51E28
+  - mint 8: https://www.mintscan.io/cosmos/tx/C6706712783C4E68BFBA398FB2D1B39989E875234FEFFE7A0D0641CA3B87D8FA
 - Escrow (code 750): `cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv`
   - https://www.mintscan.io/cosmos/wasm/contract/cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv
   - send #2: https://www.mintscan.io/cosmos/tx/0C72F725E53CD2B4EB6159EA0FF2C0C85DA1B9189FD84BA28DEA6F0071BAC2E5

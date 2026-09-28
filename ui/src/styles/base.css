@@ -1,0 +1,189 @@
+/* Page basics and the shared primitives every view uses, ported from ui/mockup/index.html.
+   Chrome (header, tabs, stepper, footer) and view-specific styles live next to their components in src/ui/. */
+@import "./fonts.css";
+@import "./tokens.css";
+
+* { box-sizing: border-box; }
+
+/* no margin reset: the mockup keeps the UA's 8px body margin, and pixel-closeness wins */
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 16px/1.5 var(--body);
+  padding: 0 16px;
+  padding-block: 20px 56px;
+}
+.wrap { max-width: 680px; margin: 0 auto; display: grid; gap: 22px; }
+
+:focus-visible { outline: 3px dashed var(--crayon); outline-offset: 3px; }
+/* headings take focus on route and step changes so screen readers land there; they aren't controls, so no ring */
+h2[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
+a { color: var(--eth-ink); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+.skip {
+  position: absolute; left: 16px; top: -60px; z-index: 30;
+  font: 700 18px/1 var(--display); color: var(--sun-ink); background: var(--sun);
+  border: 2.5px solid var(--ink); border-radius: var(--wobble); padding: 8px 14px; text-decoration: none;
+}
+.skip:focus { top: 12px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* the one big sketched card */
+.card {
+  border: 2.5px solid var(--ink); border-radius: var(--wobble);
+  padding: 26px 24px; display: grid; gap: 18px;
+  box-shadow: 4px 5px 0 var(--ink);
+  background: var(--paper);
+}
+h2 { font: 700 34px/1 var(--display); margin: 0; text-wrap: balance; }
+.lede { margin: -8px 0 0; color: var(--ink-soft); max-width: 58ch; }
+.hl { background: linear-gradient(transparent 55%, var(--sun) 55%, var(--sun) 88%, transparent 88%); color: var(--sun-ink); padding: 0 2px; }
+/* on the chalkboard the half-highlight leaves dark text on dark paper: fill the whole word instead */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hl { background: var(--sun); border-radius: 4px; }
+}
+:root[data-theme="dark"] .hl { background: var(--sun); border-radius: 4px; }
+
+.row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.row.start { justify-content: flex-start; }
+.row.center { justify-content: center; }
+.center { text-align: center; }
+.lede.center, .hint.center { margin-inline: auto; }
+.hint.center { max-width: 58ch; }
+.muted { color: var(--ink-soft); font-size: 14px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.nowrap { white-space: nowrap; }
+.note { font-size: 13.5px; color: var(--ink-soft); border-left: 3px solid var(--sun); padding-left: 10px; }
+
+/* buttons */
+.btn {
+  font: 700 22px/1 var(--display); cursor: pointer; color: var(--sun-ink);
+  background: var(--sun); border: 2.5px solid var(--ink); border-radius: var(--wobble);
+  padding: 11px 22px 12px; box-shadow: 3px 3px 0 var(--ink);
+  transition: transform .08s, box-shadow .08s;
+}
+.btn:hover:not(:disabled) { transform: translate(-1px,-1px) rotate(-.8deg); box-shadow: 4px 4px 0 var(--ink); }
+.btn:active:not(:disabled) { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.ghost { background: none; color: var(--ink); box-shadow: none; font-size: 19px; }
+.btn.eth { background: var(--eth-ink); color: var(--on-eth); }
+.btn.small { font-size: 17px; padding: 7px 14px 8px; }
+a.btn { display: inline-block; text-decoration: none; }
+/* a quiet text button, for "try again" inside notes */
+.linkish {
+  font: 800 14px/1.4 var(--body); color: var(--eth-ink); background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; justify-self: start;
+}
+
+/* form fields */
+label.field, .field { display: grid; gap: 6px; font: 700 20px/1 var(--display); }
+.field label { font: inherit; }
+input[type="text"] {
+  font: 500 15px/1 var(--mono); color: var(--ink); background: var(--paper);
+  border: 2.5px solid var(--ink); border-radius: var(--wobble-2);
+  padding: 12px 14px; width: 100%;
+}
+input[aria-invalid="true"] { border-color: var(--crayon); }
+input::placeholder { color: var(--ink-soft); opacity: 1; }
+.hint { font: 600 13px/1.4 var(--body); color: var(--ink-soft); }
+.hint.bad { color: var(--crayon-ink); }
+.hint.heads-up { color: var(--ink); border-left: 3px solid var(--crayon); padding-left: 10px; }
+.hint.heads-up b { font-weight: 800; }
+.warn {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 2px dashed var(--crayon); border-radius: var(--wobble-2); padding: 12px 14px;
+}
+.warn svg { flex: none; width: 34px; height: 34px; color: var(--crayon); }
+.warn b { font: 700 20px/1 var(--display); display: block; margin-bottom: 2px; }
+.check { display: flex; gap: 10px; align-items: center; font-weight: 700; cursor: pointer; }
+.warn + .check { margin-top: -6px; }
+
+/* an error in kid words: crayon triangle, headline, body, details */
+.oops {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 2px solid var(--crayon); border-radius: var(--wobble-2); padding: 12px 14px; font-size: 14.5px;
+}
+.oops > svg { flex: none; width: 30px; height: 30px; color: var(--crayon); }
+.oops > div { display: grid; gap: 3px; min-width: 0; }
+.oops b { font: 700 20px/1.1 var(--display); color: var(--crayon-ink); }
+.oops details { font-size: 12.5px; color: var(--ink-soft); }
+.oops summary { cursor: pointer; font-weight: 700; }
+.oops .mono { overflow-wrap: anywhere; }
+.oops.soft { border: 2px dashed var(--ink-soft); }
+.oops.soft > svg { color: var(--ink-soft); }
+.oops.soft b { color: var(--ink); }
+
+/* empty states: a doodle and a sentence */
+.empty { display: flex; gap: 14px; align-items: center; }
+.empty > .art { flex: none; width: 72px; height: 72px; }
+.empty > div { display: grid; gap: 2px; }
+.empty b { font: 700 22px/1.1 var(--display); }
+.empty span { color: var(--ink-soft); font-size: 14.5px; }
+.check input { width: 20px; height: 20px; accent-color: var(--crayon); }
+
+/* kid art */
+.art { display: block; object-fit: cover; background: var(--line); border: 2px solid var(--ink); border-radius: var(--wobble-2); }
+svg.art.doodle { background: var(--paper); padding: 4%; }
+
+/* status pills */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font: 700 16px/1 var(--display); padding: 4px 10px 5px;
+  border: 2px solid var(--ink); border-radius: var(--wobble);
+}
+.pill.crossing { background: var(--sun); color: var(--sun-ink); }
+.pill.ready { background: var(--eth-ink); color: var(--on-eth); }
+.pill.home { color: var(--ok-ink); border-color: var(--ok); }
+
+.stamp-row { margin: 0; }
+.stamp {
+  display: inline-block; font: 700 16px/1 var(--display); color: var(--eth-ink);
+  border: 2px solid var(--eth); border-radius: var(--wobble); padding: 4px 8px; transform: rotate(-4deg);
+}
+
+.celebrate { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.celebrate .art { width: 110px; height: 110px; }
+.celebrate .art:nth-child(odd) { transform: rotate(-4deg); }
+.celebrate .art:nth-child(even) { transform: rotate(3deg); }
+
+/* the trip stage list, used by the crossing screen and the tracker */
+.stages { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.stages li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; color: var(--ink-soft); }
+.stages .tick {
+  width: 26px; height: 26px; display: grid; place-items: center; font: 700 18px/1 var(--display);
+  border: 2px solid currentColor; border-radius: var(--wobble);
+}
+.stages b { font: 700 20px/1.05 var(--display); display: block; }
+.stages span.d { font-size: 13.5px; display: block; }
+.stages span.d.live { color: var(--ink); font-weight: 700; margin-top: 2px; }
+.stages li.done { color: var(--ok-ink); }
+.stages li.done b { color: var(--ink); }
+.stages li.now { color: var(--ink); }
+.stages li.now .tick { background: var(--sun); color: var(--sun-ink); animation: wiggle .7s ease-in-out infinite alternate; }
+.stages .secondary { display: block; font-weight: 600; color: var(--ink-soft); }
+@keyframes wiggle { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+
+/* loading placeholders */
+.skeleton .art, .skeleton .bar { background: var(--line); animation: pulse 1.2s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: .45; } to { opacity: 1; } }
+.loading-card { min-height: 360px; }
+
+@media (max-width: 520px) {
+  .card { padding: 20px 16px; }
+  h2 { font-size: 29px; }
+  /* thumb-sized targets */
+  .linkish { min-height: 44px; display: inline-flex; align-items: center; }
+  button.btn { min-height: 44px; }
+  .oops summary { padding-block: 3px; }
+}
+
+/* last, so it wins over every animation above */
+@media (prefers-reduced-motion: reduce) {
+  .stages li.now .tick { animation: none; }
+  .btn { transition: none; }
+  .skeleton .art, .skeleton .bar { animation: none; }
+}
