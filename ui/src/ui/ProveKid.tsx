@@ -1,6 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { useBridge } from '../chain/context'
-import type { ProveStage } from '../chain/prove'
+import { PROVE_NEEDED, type ProveStage } from '../chain/prove'
+import { isLive } from '../config/deployments'
 import type { ProofRequestProgress } from '../chain/succinct/client'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
 import type { Hex } from 'viem'
@@ -359,4 +361,30 @@ export function ProveFailure({ flow }: { flow: ProveFlow }) {
       tokenId={failure.ids.length === 1 ? failure.ids[0] : undefined}
     />
   )
+}
+
+export type ProveReady =
+  | { status: 'skip' }
+  | { status: 'connect' }
+  | { status: 'loading' }
+  | { status: 'short'; balance: bigint; refetch: () => void }
+  | { status: 'ok' }
+
+/**
+ * Whether the connected Ethereum wallet has enough PROVE in its Succinct account to pay for a proof. 'skip'
+ * where there is nothing to prove against (the demo, or a deployment with no bridge yet).
+ */
+export function useProveReady(): ProveReady {
+  const { deployment, proveKid, ethWallet } = useBridge()
+  const address = ethWallet.status === 'connected' ? ethWallet.address : undefined
+  const q = useQuery({
+    queryKey: ['prove-ready', address],
+    enabled: Boolean(proveKid && address),
+    queryFn: () => (proveKid as NonNullable<typeof proveKid>).proveBalance(),
+    refetchInterval: 30_000,
+  })
+  if (deployment.demo || !isLive(deployment)) return { status: 'skip' }
+  if (!proveKid || !address) return { status: 'connect' }
+  if (q.data === undefined) return { status: 'loading' }
+  return q.data >= PROVE_NEEDED ? { status: 'ok' } : { status: 'short', balance: q.data, refetch: () => void q.refetch() }
 }

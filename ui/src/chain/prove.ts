@@ -107,6 +107,8 @@ export interface ProveKidWriter {
    * whoever built the program. A no-op if it's already registered.
    */
   registerProgram(): Promise<void>
+  /** Current Ethereum gas price in wei. */
+  gasPrice(): Promise<bigint>
   /** ETH for exactly `prove` PROVE (18 decimals) on Uniswap right now. */
   quoteProve(prove: bigint): Promise<bigint>
   /** PROVE sitting in the wallet, waiting to be deposited. */
@@ -116,6 +118,12 @@ export interface ProveKidWriter {
   /** Moves PROVE from the wallet into its Succinct network account. */
   depositProve(amount: bigint, options?: BatchOptions): Promise<Hex>
 }
+
+/**
+ * PROVE the Succinct account must hold before sending. One proof measured 0.334 PROVE on mainnet 2026-09-28 for
+ * 1 kid and for 10 kids alike, so it's per proof, not per kid. 2 covers a few retries or a second batch.
+ */
+export const PROVE_NEEDED = 2n * 10n ** 18n
 
 export { MIN_DEPOSIT }
 
@@ -215,6 +223,7 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     submitRequest,
     proveBalance: () => getProveBalance(ethWriter.address),
     registerProgram,
+    gasPrice: () => publicClient.getGasPrice(),
     quoteProve: (prove) => ethWriter.quoteProve(prove),
     walletProveBalance: () => ethWriter.walletProveBalance(),
     buyProve: (prove, options) => ethWriter.swapEthForProve(prove, options),

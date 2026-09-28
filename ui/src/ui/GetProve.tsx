@@ -3,14 +3,20 @@ import { formatUnits, parseUnits } from 'viem'
 import { useBridge } from '../chain/context'
 import { MIN_DEPOSIT } from '../chain/prove'
 import type { BatchStage, BridgeError } from '../chain/types'
+import { formatEth } from './Claim'
 import { ConnectButton } from './Connect'
 import { ErrorNote } from './ErrorNote'
 import { ExtLink } from './ExtLink'
 import { Sheet } from './Sheet'
 import { useToast } from './Toasts'
+import './GetProve.css'
 
 const PROVE_ACCOUNT_URL = 'https://explorer.succinct.xyz/account'
-const DEFAULT_AMOUNT = '1'
+const DEFAULT_AMOUNT = '2'
+/** Gas used by the swap, measured with estimateGas on mainnet 2026-09-28 (155,742), rounded up. */
+const SWAP_GAS = 160_000n
+/** Above this, say so: it was 0.5 to 1.5 gwei on a quiet day. */
+const HIGH_GWEI = 5n
 
 // COPY: get PROVE progress
 const STAGE_LABEL: Readonly<Record<BatchStage, string>> = {
@@ -33,7 +39,7 @@ function short(wei: bigint): string {
 }
 
 /** Opens the swap and deposit modal. Without an Ethereum wallet it falls back to Succinct's own page. */
-export function GetProveButton({ className = 'btn ghost small' }: { className?: string }) {
+export function GetProveButton({ className = 'btn ghost small', onChange }: { className?: string; onChange?: () => void }) {
   const { proveKid } = useBridge()
   const [open, setOpen] = useState(false)
   if (!proveKid) return <ExtLink href={PROVE_ACCOUNT_URL}>Get PROVE</ExtLink>
@@ -42,7 +48,7 @@ export function GetProveButton({ className = 'btn ghost small' }: { className?: 
       <button type="button" className={className} onClick={() => setOpen(true)}>
         Get PROVE
       </button>
-      <GetProveSheet open={open} onClose={() => setOpen(false)} />
+      <GetProveSheet open={open} onClose={() => setOpen(false)} onChange={onChange} />
     </>
   )
 }
@@ -51,7 +57,7 @@ export function GetProveButton({ className = 'btn ghost small' }: { className?: 
  * Buy PROVE with ETH on Uniswap, then deposit it into your Succinct network account, which is what proving draws
  * from. Each step is its own button, so a user who already holds PROVE can skip to the deposit.
  */
-function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+function GetProveSheet({ open, onClose, onChange }: { open: boolean; onClose: () => void; onChange?: () => void }) {
   const { ethWallet, proveKid } = useBridge()
   const toast = useToast()
   const [text, setText] = useState(DEFAULT_AMOUNT)
@@ -62,6 +68,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const [busy, setBusy] = useState<'buy' | 'deposit' | null>(null)
   const [error, setError] = useState<BridgeError | null>(null)
   const [tick, setTick] = useState(0)
+  const [gasPrice, setGasPrice] = useState<bigint | null>(null)
 
   const amount = parseAmount(text)
   const validAmount = amount !== null && amount >= MIN_DEPOSIT
@@ -72,6 +79,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
     let cancelled = false
     void proveKid.walletProveBalance().then((w) => !cancelled && setHeld(w)).catch(() => undefined)
     void proveKid.proveBalance().then((w) => !cancelled && setNetwork(w)).catch(() => undefined)
+    void proveKid.gasPrice().then((g) => !cancelled && setGasPrice(g)).catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -101,6 +109,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
       await fn()
       toast({ tone: 'ok', title: done })
       setTick((t) => t + 1)
+      onChange?.()
     } catch (e) {
       setError(e as BridgeError)
     } finally {
@@ -108,6 +117,8 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
       setStage(null)
     }
   }
+  const gwei = gasPrice === null ? null : Number(gasPrice) / 1e9
+  const gasHigh = gasPrice !== null && gasPrice > HIGH_GWEI * 10n ** 9n
   const enough = held !== null && amount !== null && held >= amount
   const label = (kind: 'buy' | 'deposit', idle: string) => (busy === kind && stage ? STAGE_LABEL[stage] : idle)
 
@@ -115,7 +126,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
     <Sheet open={open} onClose={onClose} title="Get PROVE">
       <p className="lede">
         Proving costs PROVE, paid to Succinct's prover network from an account there. Buy some with ETH, then deposit it.
-        About 0.33 covers 10 kids.
+        One proof costs about 0.33, whether it carries 1 kid or 10.
         {/* COPY: get PROVE intro */}
       </p>
       {!connected ? (
@@ -123,7 +134,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
           Connect Ethereum
         </ConnectButton>
       ) : (
-        <>
+        <div className="get-prove">
           <p className="hint">
             In your wallet: <b>{held === null ? '…' : `${short(held)} PROVE`}</b> · In your Succinct account:{' '}
             <b>{network === null ? '…' : `${short(network)} PROVE`}</b>
@@ -133,13 +144,20 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
           </label>
           <input id="get-prove-amount" type="text" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" />
           {!validAmount && <p className="hint bad">Enter 0.01 PROVE or more.</p>}
+          {gasHigh && gwei !== null && (
+            <p className="hint" role="status">
+              Gas is high right now ({gwei.toFixed(1)} gwei). It is often cheaper later, and nothing here is urgent.
+              {/* COPY: high gas note */}
+            </p>
+          )}
 
-          <ol className="stages">
+          <ol className="prove-steps">
             <li>
               <b>1. Buy on Uniswap</b>
               <span className="d">
                 {validAmount && quote !== null ? `About ${short(quote)} ETH, up to 5% more if the price moves. The rest comes back.` : 'Getting a price…'}{' '}
                 The pool is small, so big amounts cost noticeably more.
+                {gasPrice !== null && <> Network fee for the swap: about {formatEth((SWAP_GAS * gasPrice).toString())} at {gwei?.toFixed(1)} gwei.</>}
               </span>
               <button
                 type="button"
@@ -153,7 +171,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
             </li>
             <li>
               <b>2. Deposit into Succinct</b>
-              <span className="d">One signature to approve, then one transaction. It goes to your own account.</span>
+              <span className="d">One signature to approve, then one transaction, with its own network fee. It goes to your own account.</span>
               <button
                 type="button"
                 className="btn eth"
@@ -166,7 +184,7 @@ function GetProveSheet({ open, onClose }: { open: boolean; onClose: () => void }
             </li>
           </ol>
           {error && <ErrorNote error={error} action="send" walletName={ethWallet.walletName} />}
-        </>
+        </div>
       )}
     </Sheet>
   )

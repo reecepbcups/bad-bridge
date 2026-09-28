@@ -76,3 +76,9 @@
   .scene text.more { font-size: 30px; }
   .pick-bar { margin-inline: -8px; padding-inline: 8px; }
 }
+
+/* the send steps stay visible but dead until there's PROVE for the proof */
+.prove-locked { opacity: .45; filter: grayscale(1); pointer-events: none; user-select: none; }
+.prove-gate { margin-bottom: 20px; padding: 16px; }
+.prove-gate > div { display: grid; gap: 10px; }
+.prove-gate-act { display: block; }
