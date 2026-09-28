@@ -46,6 +46,9 @@ contract E2E is Script {
         vm.stopBroadcast();
 
         console.log("bridge", address(bridge));
-        console.log("owner of token", bridge.ownerOf(tokenId));
+        address holder = bridge.ownerOf(tokenId);
+        console.log("owner of token", holder);
+        console.log("holder votes", bridge.getVotes(holder));
+        console.log("total supply", bridge.totalSupply());
     }
 }
