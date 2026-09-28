@@ -172,6 +172,17 @@ contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
         _mint(to, tokenId);
     }
 
+    /// @notice Claims several proven kids in one tx. Anyone can call it.
+    function claimMany(uint32[] calldata tokenIds) external {
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
+            uint32 tokenId = tokenIds[i];
+            address to = proven[tokenId];
+            if (to == address(0)) revert NotProven(tokenId);
+            // already claimed by someone, skip so one front-run claim can't sink the batch
+            if (_ownerOf(tokenId) == address(0)) _mint(to, tokenId);
+        }
+    }
+
     /// @notice Kids minted so far. Sparse, since only bridged ids exist.
     function totalSupply() external view returns (uint256) {
         return _getTotalSupply();

@@ -221,6 +221,59 @@ contract BadBridgeTest is BadBridgeBase {
         vm.expectRevert(abi.encodeWithSelector(BadBridge.NotProven.selector, tokenId));
         bridge.claim(tokenId);
     }
+
+    function prove(uint32 tokenId, address to) internal {
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", tokenId), abi.encodePacked(to))));
+    }
+
+    function ids(uint32 a, uint32 b, uint32 c) internal pure returns (uint32[] memory out) {
+        out = new uint32[](3);
+        (out[0], out[1], out[2]) = (a, b, c);
+    }
+
+    function test_claimMany() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+        prove(1, alice);
+        prove(7012, bob);
+        prove(9999, alice);
+        bridge.claimMany(ids(1, 7012, 9999));
+        assertEq(bridge.ownerOf(1), alice);
+        assertEq(bridge.ownerOf(7012), bob);
+        assertEq(bridge.ownerOf(9999), alice);
+    }
+
+    function test_claimManySkipsClaimed() public {
+        address alice = makeAddr("alice");
+        prove(1, alice);
+        prove(2, alice);
+        prove(3, alice);
+        bridge.claim(2);
+        bridge.claimMany(ids(1, 2, 3));
+        assertEq(bridge.balanceOf(alice), 3);
+        assertEq(bridge.totalSupply(), 3);
+    }
+
+    function test_claimManyDuplicateIds() public {
+        address alice = makeAddr("alice");
+        prove(5, alice);
+        bridge.claimMany(ids(5, 5, 5));
+        assertEq(bridge.balanceOf(alice), 1);
+    }
+
+    function test_claimManyUnprovenReverts() public {
+        address alice = makeAddr("alice");
+        prove(1, alice);
+        prove(3, alice);
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.NotProven.selector, 2));
+        bridge.claimMany(ids(1, 2, 3));
+        assertEq(bridge.balanceOf(alice), 0);
+    }
+
+    function test_claimManyEmpty() public {
+        bridge.claimMany(new uint32[](0));
+        assertEq(bridge.totalSupply(), 0);
+    }
 }
 
 contract BadBridgeVotesTest is BadBridgeBase {
@@ -508,6 +561,19 @@ contract Handler is Test {
         }
     }
 
+    function claimMany(uint256 seed, uint8 n) external {
+        if (ids.length == 0) return;
+        uint32[] memory batch = new uint32[](bound(n, 0, 4));
+        for (uint256 i = 0; i < batch.length; ++i) {
+            batch[i] = ids[uint256(keccak256(abi.encode(seed, i))) % ids.length];
+        }
+        // proven ids only, so it must never revert, claimed or not
+        bridge.claimMany(batch);
+        for (uint256 i = 0; i < batch.length; ++i) {
+            minted[batch[i]] = true;
+        }
+    }
+
     function idsLength() external view returns (uint256) {
         return ids.length;
     }
@@ -581,6 +647,21 @@ contract VotesHandler is Test {
         bridge.claim(tokenId);
         isMinted[tokenId] = true;
         minted.push(tokenId);
+    }
+
+    function claimMany(uint256 seed, uint8 n) external {
+        if (proven.length == 0) return;
+        uint32[] memory batch = new uint32[](bound(n, 0, 4));
+        for (uint256 i = 0; i < batch.length; ++i) {
+            batch[i] = proven[uint256(keccak256(abi.encode(seed, i))) % proven.length];
+        }
+        bridge.claimMany(batch);
+        for (uint256 i = 0; i < batch.length; ++i) {
+            if (!isMinted[batch[i]]) {
+                isMinted[batch[i]] = true;
+                minted.push(batch[i]);
+            }
+        }
     }
 
     function transfer(uint256 seed, uint8 toIdx) external {
