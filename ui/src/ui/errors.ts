@@ -16,6 +16,9 @@ export const ERROR_CODES = [
   'FeeTooLow',
   'ClientFrozen',
   'NotProven',
+  'ProgramNotRegistered',
+  'ArtifactUploadBlocked',
+  'WrongSigner',
   'UserRejected',
   'InsufficientFunds',
   'WrongChain',
@@ -106,6 +109,20 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
   NotProven: ({ kid }) => ({
     title: 'Not quite there yet',
     body: `The proof for ${kid} hasn't landed on Ethereum yet. Give it a few minutes and try again.`,
+  }),
+  // shown inside RegisterProgramModal instead of a plain ErrorNote — see ProveKid.tsx's ProveFailure
+  ProgramNotRegistered: () => ({
+    title: 'Needs a one-time setup',
+    body: "This prover isn't registered on Succinct's network yet. Anyone can register it — no special access needed.",
+  }),
+  // dev-only: Succinct's artifact bucket has no browser CORS policy yet, so local testing needs a relay running
+  ArtifactUploadBlocked: () => ({
+    title: 'Dev setup needed',
+    body: "Succinct's upload bucket doesn't allow browser uploads yet. Run `node scripts/artifact-proxy.mjs` in ui/ (dev mode already points at it by default — set VITE_ARTIFACT_PROXY_URL only if it's running somewhere else).",
+  }),
+  WrongSigner: ({ wallet }) => ({
+    title: 'Different account signed',
+    body: `${wallet} signed with an account other than the one connected here. Check which account is active in your wallet, then try again.`,
   }),
   UserRejected: ({ wallet, action }) => ({
     title: 'No worries',

@@ -20,6 +20,7 @@ type SignerClient = Client<Transport, Chain | undefined, Account>
 const SP1_CIRCUIT_VERSION = 'v6.1.0'
 const PROOF_MODE_GROTH16 = 4
 const FULFILLMENT_STRATEGY_AUCTION = 3
+const ARTIFACT_TYPE_PROGRAM = 1
 const ARTIFACT_TYPE_STDIN = 2
 const MESSAGE_FORMAT_BINARY = 1
 const TRANSACTION_VARIANT_REQUEST = 0
@@ -74,7 +75,7 @@ async function getNonce(address: Address, fetchImpl: typeof fetch): Promise<bigi
   return res.uint64(1) ?? 0n
 }
 
-async function isProgramRegistered(vkHash: Uint8Array, fetchImpl: typeof fetch): Promise<boolean> {
+export async function isProgramRegistered(vkHash: Uint8Array, fetchImpl: typeof fetch = fetch): Promise<boolean> {
   const req = new MessageWriter().bytes32(1, vkHash).finish()
   try {
     const res = await call('/network.ProverNetwork/GetProgram', req, fetchImpl)
@@ -131,9 +132,13 @@ async function getProversByUptime(fetchImpl: typeof fetch): Promise<Uint8Array[]
   return res.repeatedBytes(1)
 }
 
-async function createArtifact(wallet: SignerClient, fetchImpl: typeof fetch): Promise<{ artifactUri: string; presignedUrl: string }> {
+async function createArtifact(
+  wallet: SignerClient,
+  artifactType: number,
+  fetchImpl: typeof fetch,
+): Promise<{ artifactUri: string; presignedUrl: string }> {
   const signature = await signCreateArtifact(wallet)
-  const req = new MessageWriter().bytes32(1, signature).enum(2, ARTIFACT_TYPE_STDIN).finish()
+  const req = new MessageWriter().bytes32(1, signature).enum(2, artifactType).finish()
   const res = await call('/artifact.ArtifactStore/CreateArtifact', req, fetchImpl)
   const artifactUri = res.string(1)
   const presignedUrl = res.string(2)
@@ -141,9 +146,43 @@ async function createArtifact(wallet: SignerClient, fetchImpl: typeof fetch): Pr
   return { artifactUri, presignedUrl }
 }
 
+/** scripts/artifact-proxy.mjs's own default (see its PORT constant). */
+const DEFAULT_DEV_ARTIFACT_PROXY_URL = 'http://127.0.0.1:8787'
+
+/**
+ * Dev-only local relay (scripts/artifact-proxy.mjs) for the S3 PUT below. Defaults to that script's own
+ * default port whenever this is a dev build (`import.meta.env.DEV`), so `pnpm dev` works out of the box as
+ * long as the proxy script happens to be running — no env var to remember. Override with
+ * VITE_ARTIFACT_PROXY_URL if it's running elsewhere. Never defaults in a production build: the direct PUT is
+ * what's actually shipped there, and it stays broken until Succinct adds a CORS policy for that bucket
+ * (live-verified: the OPTIONS preflight itself gets HTTP 403).
+ */
+const ARTIFACT_PROXY_URL =
+  (import.meta.env.VITE_ARTIFACT_PROXY_URL as string | undefined)?.trim() || (import.meta.env.DEV ? DEFAULT_DEV_ARTIFACT_PROXY_URL : undefined)
+
 async function uploadArtifact(presignedUrl: string, bytes: Uint8Array, fetchImpl: typeof fetch): Promise<void> {
-  const res = await fetchImpl(presignedUrl, { method: 'PUT', body: new Blob([new Uint8Array(bytes)]) })
-  if (!res.ok) throw new BridgeError('Network', `stdin upload: HTTP ${res.status}`)
+  const target = ARTIFACT_PROXY_URL ? `${ARTIFACT_PROXY_URL}/upload?url=${encodeURIComponent(presignedUrl)}` : presignedUrl
+  let res: Response
+  try {
+    res = await fetchImpl(target, { method: 'PUT', body: new Blob([new Uint8Array(bytes)]) })
+  } catch (e) {
+    throw new BridgeError(
+      'ArtifactUploadBlocked',
+      "browsers can't upload to Succinct's artifact bucket directly yet (no CORS policy there) — run `node scripts/artifact-proxy.mjs` and set VITE_ARTIFACT_PROXY_URL",
+      { cause: e },
+    )
+  }
+  if (!res.ok) throw new BridgeError('Network', `artifact upload: HTTP ${res.status}`)
+}
+
+/** bincode's `Vec<u8>` encoding: u64 LE length, then the raw bytes — what create_artifact_with_content::<Vec<u8>>
+ * wraps a raw byte artifact (like the ELF) in before zstd-compressing it. Unlike the stdin artifact, whose
+ * bytes are already a full bincode-encoded struct (see hub/stdin.ts's encodeSp1Stdin). */
+function bincodeVecU8(bytes: Uint8Array): Uint8Array {
+  const out = new Uint8Array(8 + bytes.length)
+  new DataView(out.buffer).setBigUint64(0, BigInt(bytes.length), true)
+  out.set(bytes, 8)
+  return out
 }
 
 function buildRequestBody(opts: {
@@ -216,12 +255,12 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
   const address = opts.wallet.account.address
 
   if (!(await isProgramRegistered(vkHash, fetchImpl))) {
-    throw new BridgeError('Unknown', 'the membership program is not registered on the Succinct network yet')
+    throw new BridgeError('ProgramNotRegistered', 'the membership program is not registered on the Succinct network yet')
   }
 
   opts.onStage?.('uploading-stdin')
   const compressed = await zstdCompress(opts.stdinBytes)
-  const { artifactUri, presignedUrl } = await createArtifact(opts.wallet, fetchImpl)
+  const { artifactUri, presignedUrl } = await createArtifact(opts.wallet, ARTIFACT_TYPE_STDIN, fetchImpl)
   await uploadArtifact(presignedUrl, compressed, fetchImpl)
 
   opts.onStage?.('requesting-proof')
@@ -253,4 +292,36 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
     if (nowSecs() > deadline) throw new BridgeError('Unknown', 'the proof request passed its deadline without being fulfilled')
     await sleep(pollMs)
   }
+}
+
+export interface RegisterProgramOptions {
+  wallet: SignerClient
+  vkHash: Hex
+  /** bincode(SP1VerifyingKey) for this exact ELF — computed once, offline (setup() needs no network access),
+   * and shipped as a constant, since deriving it needs the actual SP1 prover's setup step, not something a
+   * browser can run. See chain/prove.ts for where this lives. */
+  vk: Uint8Array
+  elf: Uint8Array
+  fetchImpl?: typeof fetch
+}
+
+/**
+ * Registers a guest program on Succinct's network — the one-time step RequestProof needs before it'll accept
+ * that vk_hash. A no-op if it's already registered. Anyone can register any program; it's not gated to
+ * whoever built it, same as everything else on this network.
+ */
+export async function registerProgram(opts: RegisterProgramOptions): Promise<void> {
+  const fetchImpl = opts.fetchImpl ?? fetch
+  const vkHashBytes = hexToBytes(opts.vkHash)
+  if (await isProgramRegistered(vkHashBytes, fetchImpl)) return
+
+  const { artifactUri, presignedUrl } = await createArtifact(opts.wallet, ARTIFACT_TYPE_PROGRAM, fetchImpl)
+  const compressed = await zstdCompress(bincodeVecU8(opts.elf))
+  await uploadArtifact(presignedUrl, compressed, fetchImpl)
+
+  const nonce = await getNonce(opts.wallet.account.address, fetchImpl)
+  const body = new MessageWriter().uint64(1, nonce).bytes32(2, vkHashBytes).bytes32(3, opts.vk).string(4, artifactUri).finish()
+  const signature = await signBytes(opts.wallet, body)
+  const req = new MessageWriter().enum(1, MESSAGE_FORMAT_BINARY).bytes32(2, signature).message(3, body).finish()
+  await call('/network.ProverNetwork/CreateProgram', req, fetchImpl)
 }

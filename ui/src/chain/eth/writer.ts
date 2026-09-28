@@ -22,7 +22,7 @@ import {
   type Sp1ProofArgs,
   type SubmitBatchResult,
 } from '../types'
-import { requestGroth16Proof as requestGroth16ProofImpl, type SuccinctStage } from '../succinct/client'
+import { registerProgram as registerProgramImpl, requestGroth16Proof as requestGroth16ProofImpl, type SuccinctStage } from '../succinct/client'
 import type { DecodedGroth16Proof } from '../succinct/proof'
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
@@ -76,6 +76,11 @@ export interface EthWriterWithBatch extends EthWriter {
    * that would submitBatch it. The wallet client stays inside this module — callers never see it.
    */
   requestGroth16Proof(vkHash: Hex, stdinBytes: Uint8Array, options?: { onStage?: (stage: SuccinctStage) => void }): Promise<DecodedGroth16Proof>
+  /**
+   * Registers a guest program on Succinct's network (a no-op if it's already registered), signing with the
+   * same connected wallet. Anyone can register any program — this isn't gated to whoever built it.
+   */
+  registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void>
 }
 
 /** Splits requested ids into what can be claimed now, and why the rest can't. */
@@ -263,6 +268,11 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
     return requestGroth16ProofImpl({ wallet, vkHash, stdinBytes, onStage })
   }
 
+  async function registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void> {
+    const wallet = await getWallet()
+    await registerProgramImpl({ wallet, vkHash, vk, elf })
+  }
+
   return {
     address,
     claim: async (ids, options) => {
@@ -288,6 +298,13 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
     requestGroth16Proof: async (vkHash, stdinBytes, options) => {
       try {
         return await requestGroth16Proof(vkHash, stdinBytes, options?.onStage)
+      } catch (e) {
+        throw toEthError(e)
+      }
+    },
+    registerProgram: async (vkHash, vk, elf) => {
+      try {
+        return await registerProgram(vkHash, vk, elf)
       } catch (e) {
         throw toEthError(e)
       }

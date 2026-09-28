@@ -12,7 +12,7 @@ import { dateTime, kidWord, shortAddress, timeAgo } from '../format'
 import { useFocusWhenDone, useHubNow } from '../hooks'
 import { KidArt, KidDoodle } from '../KidArt'
 import { parseLookup, type Lookup } from '../lookup'
-import { ProveButton, useProveFlow, type ProveFlow } from '../ProveKid'
+import { ProveButton, ProveFailure, useProveFlow, type ProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { SpeedUp } from '../SpeedUp'
 import { StageList, TrackBar } from '../StageList'
@@ -175,14 +175,7 @@ export function KidsView({ address }: { address?: string }) {
               tokenId={claim.failure.ids.length === 1 ? claim.failure.ids[0] : undefined}
             />
           )}
-          {prove.failure && (
-            <ErrorNote
-              error={prove.failure.error}
-              action="prove"
-              walletName={ethWallet.walletName}
-              tokenId={prove.failure.ids.length === 1 ? prove.failure.ids[0] : undefined}
-            />
-          )}
+          <ProveFailure flow={prove} />
           {trips.error && <ErrorNote error={trips.error} action="read" onRetry={trips.refetch} live={false} />}
           <ul className="list" aria-label="Kids on the bridge">
             {list.map((t) => (

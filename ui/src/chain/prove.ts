@@ -7,6 +7,7 @@
 // that since it's one zkVM run either way). Behind real.tsx's lazy boundary like hub/ and eth/ already are,
 // so cosmjs-types and the zstd WASM module never load in the demo bundle.
 
+import { fromBase64 } from '@cosmjs/encoding'
 import { bytesToHex, type Hex } from 'viem'
 import { readContract } from 'viem/actions'
 import type { Deployment } from '../config/deployments'
@@ -21,6 +22,25 @@ import { getProveBalance, type SuccinctStage } from './succinct/client'
 import { BridgeError, type EthAddress, type KidId } from './types'
 
 export type ProveStage = 'finding-proof' | SuccinctStage | 'signing' | 'confirming'
+
+/**
+ * bincode(SP1VerifyingKey) for public/membership.elf (batcher/elf/sp1-ics07-tendermint-membership), computed
+ * once offline (2026-09-28) via `ProverClient::builder().mock().build().setup(elf)` — setup() needs no
+ * network access, just the ELF, so this never changes unless the ELF does. Verified this session: its
+ * bytes32() hash matched the light client's on-chain MEMBERSHIP_PROGRAM_VKEY exactly. If the light client is
+ * ever redeployed with a different membership program, this pairing goes stale — CreateProgram would then
+ * reject it (the network checks a submitted vk hashes to the vk_hash it's claimed against), not silently
+ * register the wrong thing.
+ */
+const MEMBERSHIP_VK_BASE64 =
+  'uGsAAAF4AAAAAAAAm5n5cNPZczk4H187KIagQAJmCwUvC/Ffc79eGpL39T7c8KpRHjUkEQTnPwu27GkO0Y7hGXvCcV/gG/waQO39QZpDVh9/BqING0DiLjhtMl6otMtC/4oxXgAAAAA='
+const MEMBERSHIP_ELF_URL = '/membership.elf'
+
+async function fetchMembershipElf(): Promise<Uint8Array> {
+  const res = await fetch(MEMBERSHIP_ELF_URL)
+  if (!res.ok) throw new BridgeError('Network', `fetching the membership program: HTTP ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
+}
 
 export interface ProveKidsOptions {
   /** Called as the flow reaches each stage. Never called after the promise settles. */
@@ -59,6 +79,12 @@ export interface ProveKidWriter {
    * decimals). Needs no signature, so this is safe to call just to show a "you'll need some PROVE" note.
    */
   proveBalance(): Promise<bigint>
+  /**
+   * Registers the membership program on Succinct's network, if it isn't already — the one-time step
+   * RequestProof needs before it'll accept BadBridge's vk_hash. Anyone can call this; it's not gated to
+   * whoever built the program. A no-op if it's already registered.
+   */
+  registerProgram(): Promise<void>
 }
 
 export function createProveKidWriter(deployment: Deployment, ethWriter: EthWriterWithBatch): ProveKidWriter {
@@ -119,5 +145,13 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     return { txHash }
   }
 
-  return { proveKid, proveKids, proveBalance: () => getProveBalance(ethWriter.address) }
+  async function registerProgram(): Promise<void> {
+    const bridge = requireBridge(deployment)
+    const lightClient = await readContract(publicClient, { address: bridge, abi: bridgeAbi, functionName: 'lightClient' })
+    const vkHash = await readContract(publicClient, { address: lightClient, abi: lightClientAbi, functionName: 'MEMBERSHIP_PROGRAM_VKEY' })
+    const elf = await fetchMembershipElf()
+    await ethWriter.registerProgram(vkHash, fromBase64(MEMBERSHIP_VK_BASE64), elf)
+  }
+
+  return { proveKid, proveKids, proveBalance: () => getProveBalance(ethWriter.address), registerProgram }
 }

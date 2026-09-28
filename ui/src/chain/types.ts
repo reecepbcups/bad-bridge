@@ -311,6 +311,14 @@ export type BridgeErrorCode =
   | 'ClientFrozen'
   /** bridge: claim before the proof landed */
   | 'NotProven'
+  /** prove: the guest program isn't registered on Succinct's network yet (a one-time, anyone-can-do-it step) */
+  | 'ProgramNotRegistered'
+  /** prove: the browser can't PUT artifacts to Succinct's S3 bucket directly (it has no CORS policy for
+   * browsers) — dev-only, needs `node scripts/artifact-proxy.mjs` running locally */
+  | 'ArtifactUploadBlocked'
+  /** prove: the wallet's personal_sign came back from a different account than the one connected — the
+   * extension had a different account active than the app expected */
+  | 'WrongSigner'
   /** wallet: the user declined */
   | 'UserRejected'
   /** not enough ATOM or ETH for fees */

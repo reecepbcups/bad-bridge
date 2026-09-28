@@ -11,7 +11,7 @@ import { blockNumber, dateTime, shortAddress, shortHash } from '../format'
 import { useFocusWhenDone } from '../hooks'
 import { KidArt } from '../KidArt'
 import { isKidId } from '../lookup'
-import { ProveBalanceNote, ProveButton, useProveFlow } from '../ProveKid'
+import { ProveBalanceNote, ProveButton, ProveFailure, useProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { StageList } from '../StageList'
 import { STAGE_PILL } from '../stages'
@@ -124,14 +124,7 @@ function Kid({ id }: { id: KidId }) {
           )}
           {!deployment.demo && t.stage === 'proving' && <ProveBalanceNote />}
           {t.stage === 'proving' && ethWallet.wrongChain && <SwitchChain />}
-          {prove.failure && (
-            <ErrorNote
-              error={prove.failure.error}
-              action="prove"
-              walletName={ethWallet.walletName}
-              tokenId={prove.failure.ids.length === 1 ? prove.failure.ids[0] : undefined}
-            />
-          )}
+          <ProveFailure flow={prove} />
           {sent && <StageList facts={t} health={health.data} />}
 
           <dl className="facts">

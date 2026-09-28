@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "artifact-proxy": "node scripts/artifact-proxy.mjs",
     "build": "vite build",
     "build:reece-test": "VITE_DEPLOYMENT=reece-test VITE_ALLOW_DEMO= vite build",
     "build:badkids": "VITE_DEPLOYMENT=badkids VITE_ALLOW_DEMO= vite build",

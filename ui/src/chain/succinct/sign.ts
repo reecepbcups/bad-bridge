@@ -11,8 +11,9 @@
 //   here exactly, since the live server's expectations weren't independently verified — if CreateArtifact
 //   gets rejected, the first thing to try is the standard 27/28 byte instead (see the build plan).
 
-import { bytesToHex, hexToBytes, type Account, type Chain, type Client, type Transport } from 'viem'
+import { bytesToHex, hexToBytes, recoverMessageAddress, type Account, type Chain, type Client, type Transport } from 'viem'
 import { signMessage } from 'viem/actions'
+import { BridgeError } from '../types'
 
 // Duplicated from eth/writer.ts's SignerClient rather than imported, so this module never depends on
 // eth/writer.ts (which itself depends on succinct/client.ts, which depends on this file — importing the
@@ -21,9 +22,26 @@ type SignerClient = Client<Transport, Chain | undefined, Account>
 
 const CREATE_ARTIFACT_MESSAGE = new TextEncoder().encode('create_artifact')
 
-/** Standard EIP-191 personal_sign over raw bytes, as 65 bytes: r(32) || s(32) || v(27 or 28). */
+/**
+ * Standard EIP-191 personal_sign over raw bytes, as 65 bytes: r(32) || s(32) || v(27 or 28).
+ *
+ * Verifies the signature actually recovers to `wallet.account.address` before returning it. This matters
+ * because a wallet extension's `personal_sign` can silently sign with whatever account is currently active
+ * in the extension, not necessarily the one this app thinks is connected (`wallet.account.address` is what
+ * the app asked for, not a guarantee of what actually signed) — without this check, a mismatch here doesn't
+ * surface until Succinct's network rejects the nonce, with an error naming some unrelated recovered address
+ * instead of pointing at the real cause. Live-verified (this session): exactly this happened repeatedly.
+ */
 export async function signBytes(wallet: SignerClient, message: Uint8Array): Promise<Uint8Array> {
-  const sig = await signMessage(wallet, { account: wallet.account, message: { raw: bytesToHex(message) } })
+  const raw = bytesToHex(message)
+  const sig = await signMessage(wallet, { account: wallet.account, message: { raw } })
+  const signer = await recoverMessageAddress({ message: { raw }, signature: sig })
+  if (signer.toLowerCase() !== wallet.account.address.toLowerCase()) {
+    throw new BridgeError(
+      'WrongSigner',
+      `wallet signed with ${signer}, not the connected account ${wallet.account.address} — check which account is active in your wallet`,
+    )
+  }
   return hexToBytes(sig)
 }
 

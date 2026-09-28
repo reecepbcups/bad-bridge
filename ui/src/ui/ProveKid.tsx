@@ -3,8 +3,10 @@ import { useBridge } from '../chain/context'
 import type { ProveStage } from '../chain/prove'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
 import { ConnectButton } from './Connect'
+import { ErrorNote } from './ErrorNote'
 import { ExtLink } from './ExtLink'
 import { kidList } from './format'
+import { Sheet } from './Sheet'
 import { useToast, type Toast } from './Toasts'
 
 // Mirrors Claim.tsx's useClaimFlow/ClaimButton pattern, for the browser-only "prove my own kids" flow
@@ -150,5 +152,88 @@ export function ProveButton({
     >
       {mine && flow.stage ? STAGE_LABEL[flow.stage] : children}
     </button>
+  )
+}
+
+interface RegisterFlow {
+  run: () => Promise<void>
+  status: 'idle' | 'pending' | 'success' | 'error'
+  error: BridgeError | null
+}
+
+function useRegisterFlow(): RegisterFlow {
+  const { proveKid } = useBridge()
+  const [status, setStatus] = useState<RegisterFlow['status']>('idle')
+  const [error, setError] = useState<BridgeError | null>(null)
+
+  const run = async () => {
+    if (!proveKid || status === 'pending') return
+    setStatus('pending')
+    setError(null)
+    try {
+      await proveKid.registerProgram()
+      setStatus('success')
+    } catch (e) {
+      setError(e as BridgeError)
+      setStatus('error')
+    }
+  }
+  return { run, status, error }
+}
+
+/** The one-click "register the prover" modal for ProgramNotRegistered — anyone can do this, it's a one-time
+ * setup step, not gated to whoever built the program. */
+function RegisterProgramModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { ethWallet } = useBridge()
+  const register = useRegisterFlow()
+  return (
+    <Sheet open={open} onClose={onClose} title="One-time setup needed">
+      <p className="lede">
+        This prover isn't registered on Succinct's network yet — a one-time step before anyone can request a
+        proof from it. Anyone can register it; it doesn't have to be whoever built it.
+        {/* COPY: register-program modal */}
+      </p>
+      {register.status === 'success' ? (
+        <p className="hint">Registered. Close this and try "Prove it yourself" again.</p>
+      ) : (
+        <>
+          <button type="button" className="btn eth" disabled={register.status === 'pending'} onClick={() => void register.run()}>
+            {register.status === 'pending' ? 'Registering…' : 'Register it'}
+          </button>
+          {register.error && <ErrorNote error={register.error} action="prove" walletName={ethWallet.walletName} onRetry={() => void register.run()} />}
+        </>
+      )}
+    </Sheet>
+  )
+}
+
+/**
+ * A prove failure, shown the right way for what went wrong: ProgramNotRegistered gets the one-click register
+ * modal (auto-opens; reopens on a fresh failure even if the last one was dismissed), anything else gets a
+ * plain ErrorNote.
+ */
+export function ProveFailure({ flow }: { flow: ProveFlow }) {
+  const { ethWallet } = useBridge()
+  const failure = flow.failure
+  const notRegistered = failure?.error.code === 'ProgramNotRegistered'
+  const [dismissed, setDismissed] = useState(false)
+  const [lastFailure, setLastFailure] = useState(failure)
+
+  // a fresh failure (even the same code) should reopen the modal, not stay dismissed from last time — adjusted
+  // during render (React's own pattern for this), not in an effect, so it takes effect in the same commit
+  if (failure !== lastFailure) {
+    setLastFailure(failure)
+    if (notRegistered) setDismissed(false)
+  }
+
+  if (!failure) return null
+  if (notRegistered) return <RegisterProgramModal open={!dismissed} onClose={() => setDismissed(true)} />
+  return (
+    <ErrorNote
+      error={failure.error}
+      action="prove"
+      walletName={ethWallet.walletName}
+      tokenId={failure.ids.length === 1 ? failure.ids[0] : undefined}
+    />
   )
 }
