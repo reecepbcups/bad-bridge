@@ -65,7 +65,7 @@ Done when: green tests, baseline numbers written into the "Results" section at t
 | `test_claimGivesVote` | After claim, `getVotes(alice) == 1`, `delegates(alice) == alice`, no delegate tx sent |
 | `test_transferMovesVote` | alice to bob moves 1 vote |
 | `test_delegateAndBack` | `delegate(carol)` moves votes to carol. `delegate(address(0))` returns them to alice. Carol ends at 0 |
-| `test_delegateZeroNeverLosesVotes` | Fuzz: any sequence of delegate targets (including 0) keeps the sum of votes equal to `totalSupply` |
+| `testFuzz_delegateZeroNeverLosesVotes` | Fuzz: any sequence of delegate targets (including 0) keeps the sum of votes equal to `totalSupply` |
 | `test_delegateBySig` | Signed delegation works. Replaying it reverts. An expired signature reverts |
 | `test_pastVotesAndSupply` | Claim at t1, warp, claim at t2. `getPastTotalSupply(t1)` and `getPastVotes` report the older values. Querying `clock()` itself reverts |
 | `test_clockMode` | `CLOCK_MODE() == "mode=timestamp"`, `clock() == block.timestamp` |
@@ -204,12 +204,12 @@ From a single claim to a fresh address, then one transfer. Optimizer on for "Aft
 | `claim` gas | 70,849 | 167,775 |
 | `submitBatch` gas (1 record, mocked verifier) | 74,603 | 69,622 |
 | `transferFrom` gas | 55,585 | 117,481 |
-| `BadBridge` runtime size | 13,471 B | 13,974 B (10,602 B headroom) |
+| `BadBridge` runtime size | 13,471 B | 13,987 B (10,589 B headroom) |
 | Deploy gas | 3,077,821 | 3,269,471 |
 
 For comparison, the original code with the optimizer on: `claim` 70,550, `transferFrom` 55,032, runtime 7,551 B. So votes cost about +97k per first claim and +62k per transfer. Self-delegation was kept knowing that (2026-09-28).
 
-Tests: 41 unit and fuzz tests, 4 invariants across 2 suites.
+Tests: 37 unit and fuzz tests, plus 4 invariants across 2 suites. Negative tests pin the exact revert reason.
 
 Fork run (step 5), `forge script` against mainnet state via publicnode, no broadcast:
 
@@ -222,3 +222,12 @@ Fork run (step 5), `forge script` against mainnet state via publicnode, no broad
 - **Scripts landed with step 2**, not step 4. The constructor change broke both scripts, and `forge build` compiles them
 - **Step 5 used `forge script --fork-url`**, not a separate Anvil. Same state, and nothing to clean up
 - **Full invariant runs are slow**: 5,000 runs × 500 depth took ~50 min per suite. While iterating we ran them with `FOUNDRY_INVARIANT_RUNS=64 FOUNDRY_INVARIANT_DEPTH=100`
+
+### Review fixes
+
+- `claim` and `claimMany` share one private `_recipient` check, so a future `claimed` flag only goes in one place
+- `clock()` uses OZ `Time.timestamp()`
+- `Deploy.s.sol` rejects `ROYALTY_BPS` above 1000 before the `uint96` cast, so a typo can't wrap into a valid rate
+- `E2E.s.sol` logs votes in a `try`, so reusing a pre-votes `BRIDGE` (ReeceBadTest) doesn't revert the run
+- The new negative tests pin the exact revert reason instead of a bare `expectRevert()`
+- Not fixed, documented in `nft-features.md` section 8: implicit self-delegation emits no `DelegateChanged`

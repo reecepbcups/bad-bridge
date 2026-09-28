@@ -231,7 +231,7 @@ Notes:
 
 - `delegates(address(0))` still returns `address(0)`, so mints and burns keep the zero-address path in `_transferVotingUnits` intact.
 - `_setDefaultRoyalty` already reverts on a zero receiver and on bps above 10000. The cap is ours.
-- Bytecode grows. Without the optimizer, votes alone took the runtime to 21.7 KB of the 24 KB limit, so the optimizer is now on (200 runs). The finished contract is 13.97 KB.
+- Bytecode grows. Without the optimizer, votes alone took the runtime to 21.7 KB of the 24 KB limit, so the optimizer is now on (200 runs). The finished contract is 13.99 KB.
 
 ---
 
@@ -282,6 +282,7 @@ For whoever is building the frontend:
 - New events: `DelegateChanged`, `DelegateVotesChanged`, `ContractURIUpdated`, `OwnershipTransferStarted`, `OwnershipTransferred`
 - New error: `RoyaltyTooHigh(uint96)`
 - `delegates(holder)` returns the holder itself when they haven't picked anyone, never `address(0)`
+- Implicit self-delegation emits `DelegateVotesChanged` on every claim and transfer, but **no `DelegateChanged`** until the holder calls `delegate`. An indexer that builds its delegate list from `DelegateChanged` alone will miss those holders. Read `getVotes` or follow `DelegateVotesChanged` instead. Check this against whichever Governor UI gets picked
 - `delegateBySig` uses the EIP-712 domain name = collection name, version `"1"`
 - Unchanged: `claim`, `submitBatch`, `proven`, `parse`, `Proven`
 - The constructor has four extra args. Deploy tooling that builds constructor calldata has to change

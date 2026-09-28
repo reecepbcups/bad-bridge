@@ -14,8 +14,10 @@ contract Deploy is Script {
         require(escrow != bytes32(0), "ESCROW unset");
         address owner = vm.envAddress("OWNER");
         require(owner != address(0), "OWNER unset");
-        // no default, so nobody ships a 0% royalty by accident
-        uint96 royaltyBps = uint96(vm.envUint("ROYALTY_BPS"));
+        // no default, so nobody ships a 0% royalty by accident. Checked before the uint96 cast so a typo can't wrap
+        uint256 bps = vm.envUint("ROYALTY_BPS");
+        require(bps <= 1000, "ROYALTY_BPS above 1000 (10%)");
+        uint96 royaltyBps = uint96(bps);
         address royaltyReceiver = vm.envOr("ROYALTY_RECEIVER", owner);
         string memory contractURI = vm.envString("CONTRACT_URI");
 

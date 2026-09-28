@@ -6,6 +6,7 @@ import { ERC721Votes } from "@openzeppelin/contracts/token/ERC721/extensions/ERC
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ERC2981 } from "@openzeppelin/contracts/token/common/ERC2981.sol";
 import { Ownable, Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { Time } from "@openzeppelin/contracts/utils/types/Time.sol";
 
 interface IRouter {
     function getClient(string calldata clientId) external view returns (address);
@@ -164,20 +165,17 @@ contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
 
     /// @notice Mints a proven token to its recorded recipient. Anyone can call it.
     function claim(uint32 tokenId) external {
-        address to = proven[tokenId];
-        if (to == address(0)) revert NotProven(tokenId);
         // _mint reverts if the token exists, so a second claim can't mint twice. That only holds
-        // because nothing can burn: a burn path would need a claimed flag here. Not _safeMint:
+        // because nothing can burn: a burn path would need a claimed flag in _recipient. Not _safeMint:
         // a recipient contract without onERC721Received would strand the kid forever.
-        _mint(to, tokenId);
+        _mint(_recipient(tokenId), tokenId);
     }
 
     /// @notice Claims several proven kids in one tx. Anyone can call it.
     function claimMany(uint32[] calldata tokenIds) external {
         for (uint256 i = 0; i < tokenIds.length; ++i) {
             uint32 tokenId = tokenIds[i];
-            address to = proven[tokenId];
-            if (to == address(0)) revert NotProven(tokenId);
+            address to = _recipient(tokenId);
             // already claimed by someone, skip so one front-run claim can't sink the batch
             if (_ownerOf(tokenId) == address(0)) _mint(to, tokenId);
         }
@@ -189,7 +187,7 @@ contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
     }
 
     function clock() public view override returns (uint48) {
-        return uint48(block.timestamp);
+        return Time.timestamp();
     }
 
     // solhint-disable-next-line func-name-mixedcase
@@ -242,6 +240,12 @@ contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC2981) returns (bool) {
         return super.supportsInterface(interfaceId);
+    }
+
+    /// @dev The one place both claim paths check a kid was proven.
+    function _recipient(uint32 tokenId) private view returns (address to) {
+        to = proven[tokenId];
+        if (to == address(0)) revert NotProven(tokenId);
     }
 
     function _setRoyalty(address receiver, uint96 bps) private {

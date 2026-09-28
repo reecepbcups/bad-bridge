@@ -48,7 +48,12 @@ contract E2E is Script {
         console.log("bridge", address(bridge));
         address holder = bridge.ownerOf(tokenId);
         console.log("owner of token", holder);
-        console.log("holder votes", bridge.getVotes(holder));
-        console.log("total supply", bridge.totalSupply());
+        // a reused BRIDGE may predate votes (ReeceBadTest does), so don't let the logging revert the run
+        try bridge.getVotes(holder) returns (uint256 votes) {
+            console.log("holder votes", votes);
+            console.log("total supply", bridge.totalSupply());
+        } catch {
+            console.log("bridge has no votes");
+        }
     }
 }

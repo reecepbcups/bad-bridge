@@ -341,12 +341,12 @@ contract BadBridgeVotesTest is BadBridgeBase {
         assertEq(bridge.delegates(signer), carol);
         assertEq(bridge.getVotes(carol), 1);
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("InvalidAccountNonce(address,uint256)", signer, 1));
         bridge.delegateBySig(carol, 0, expiry, v, r, s);
 
         (v, r, s) = signDelegation(pk, bob, 1, expiry);
         vm.warp(expiry + 1);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("VotesExpiredSignature(uint256)", expiry));
         bridge.delegateBySig(bob, 1, expiry, v, r, s);
     }
 
@@ -363,7 +363,7 @@ contract BadBridgeVotesTest is BadBridgeBase {
         assertEq(bridge.getPastVotes(alice, 2500), 2);
 
         // the current timepoint isn't final yet
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("ERC5805FutureLookup(uint256,uint48)", 3000, uint48(3000)));
         bridge.getPastTotalSupply(3000);
     }
 
@@ -426,12 +426,12 @@ contract BadBridgeOwnerTest is BadBridgeBase {
 
     function test_royaltyZeroReceiverReverts() public {
         vm.prank(OWNER);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("ERC2981InvalidDefaultRoyaltyReceiver(address)", address(0)));
         bridge.setRoyalty(address(0), 500);
     }
 
     function test_zeroOwnerReverts() public {
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("OwnableInvalidOwner(address)", address(0)));
         deployWith(address(0), ROYALTY, 500);
     }
 
@@ -461,9 +461,9 @@ contract BadBridgeOwnerTest is BadBridgeBase {
         vm.prank(OWNER);
         bridge.renounceOwnership();
         vm.startPrank(OWNER);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", OWNER));
         bridge.setRoyalty(ROYALTY, 100);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", OWNER));
         bridge.setContractURI("ipfs://new");
         vm.stopPrank();
     }
