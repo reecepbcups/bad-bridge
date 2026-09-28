@@ -6,11 +6,12 @@ import { grpcWebCall } from './grpcweb'
 // trailer frame carrying "grpc-status:0\r\n". Locks the frame parser to what the live server actually sends.
 const LIVE_OK_RESPONSE = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0f, 0x67, 0x72, 0x70, 0x63, 0x2d, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x3a, 0x30, 0x0d, 0x0a])
 
-function fakeFetch(body: Uint8Array, status = 200): typeof fetch {
+function fakeFetch(body: Uint8Array, status = 200, headers: Record<string, string> = {}): typeof fetch {
   // A raw ArrayBuffer, not a Blob: this test environment's Response+Blob doesn't preserve bytes (stringifies
   // to "[object Blob]") the way a real browser does — production's Blob usage is unaffected by this, only
   // this fixture's body construction needs to sidestep it.
-  return () => Promise.resolve(new Response(new Uint8Array(body).buffer, { status, headers: { 'content-type': 'application/grpc-web+proto' } }))
+  return () =>
+    Promise.resolve(new Response(new Uint8Array(body).buffer, { status, headers: { 'content-type': 'application/grpc-web+proto', ...headers } }))
 }
 
 describe('grpcWebCall', () => {
@@ -47,5 +48,19 @@ describe('grpcWebCall', () => {
 
   it('throws on a non-2xx HTTP status', async () => {
     await expect(grpcWebCall('/network.ProverNetwork/GetNonce', new Uint8Array(), fakeFetch(new Uint8Array(), 502))).rejects.toThrow(/HTTP 502/)
+  })
+
+  it('throws on a Trailers-Only response (grpc-status as an HTTP header, empty body) — captured live from GetProgram on an unregistered vk_hash', async () => {
+    const fetchImpl = fakeFetch(new Uint8Array(), 200, {
+      'grpc-status': '5',
+      'grpc-message': 'program%20with%20vk_hash%200xdead%20not%20found',
+    })
+    await expect(grpcWebCall('/network.ProverNetwork/GetProgram', new Uint8Array(), fetchImpl)).rejects.toThrow(/grpc-status 5.*not found/)
+  })
+
+  it('does not misread a Trailers-Only success (grpc-status: 0 header, empty body) as an error', async () => {
+    const fetchImpl = fakeFetch(new Uint8Array(), 200, { 'grpc-status': '0' })
+    const data = await grpcWebCall('/network.ProverNetwork/GetProgram', new Uint8Array(), fetchImpl)
+    expect(data.length).toBe(0)
   })
 })

@@ -7,7 +7,7 @@
 
 import { hexToBytes, type Account, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
 import { BridgeError } from '../types'
-import { grpcWebCall } from './grpcweb'
+import { GrpcError, grpcWebCall } from './grpcweb'
 import { decodeGroth16ProofFromNetwork, type DecodedGroth16Proof } from './proof'
 import { signBytes, signCreateArtifact } from './sign'
 import { MessageReader, MessageWriter } from './wire'
@@ -25,6 +25,8 @@ const MESSAGE_FORMAT_BINARY = 1
 const TRANSACTION_VARIANT_REQUEST = 0
 const FULFILLMENT_STATUS_FULFILLED = 3
 const FULFILLMENT_STATUS_UNFULFILLABLE = 4
+/** Standard gRPC status code. */
+const GRPC_NOT_FOUND = 5
 
 /** sp1-sdk's MAINNET_DEFAULT_CYCLE_LIMIT / DEFAULT_GAS_LIMIT: the skip_simulation defaults, since this
  * client never runs the guest program locally to measure real usage. Pricing is by actual cycles used
@@ -74,8 +76,15 @@ async function getNonce(address: Address, fetchImpl: typeof fetch): Promise<bigi
 
 async function isProgramRegistered(vkHash: Uint8Array, fetchImpl: typeof fetch): Promise<boolean> {
   const req = new MessageWriter().bytes32(1, vkHash).finish()
-  const res = await call('/network.ProverNetwork/GetProgram', req, fetchImpl)
-  return res.has(1)
+  try {
+    const res = await call('/network.ProverNetwork/GetProgram', req, fetchImpl)
+    return res.has(1)
+  } catch (e) {
+    // Live-verified (this session): an unregistered vk_hash answers NOT_FOUND, not "found: false" — the
+    // network doesn't have a not-found-but-successful shape for this, it's a genuine grpc-status error.
+    if (e instanceof GrpcError && e.code === GRPC_NOT_FOUND) return false
+    throw e
+  }
 }
 
 /**

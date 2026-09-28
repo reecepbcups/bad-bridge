@@ -1,6 +1,6 @@
-// The SP1Stdin bytes for the membership guest program, for exactly one escrow record. Ports main.rs's
-// SP1Stdin construction (host/src/main.rs:14-18 is the same thing for a single record) and bincode-encodes
-// the result the way sp1-sdk does before zstd-compressing and uploading it (see chain/succinct/client.ts).
+// The SP1Stdin bytes for the membership guest program, for one or more escrow records proven together in a
+// single batch. Ports main.rs's SP1Stdin construction and bincode-encodes the result the way sp1-sdk does
+// before zstd-compressing and uploading it (see chain/succinct/client.ts).
 
 import { bytesToHex, encodeAbiParameters, hexToBytes } from 'viem'
 
@@ -20,19 +20,29 @@ export function encodeKvPair(storeKey: Uint8Array, value: Uint8Array): Uint8Arra
   return hexToBytes(encoded)
 }
 
-/** `count` as SP1Stdin sees it: a 1u16 little-endian chunk, even though it's always 1 here (guest ELF's I/O contract expects it). */
-function oneU16LE(): Uint8Array {
+/** `count` as SP1Stdin sees it: a u16 little-endian chunk (guest ELF's I/O contract expects it before the records). */
+function countU16LE(n: number): Uint8Array {
   const out = new Uint8Array(2)
-  new DataView(out.buffer).setUint16(0, 1, true)
+  new DataView(out.buffer).setUint16(0, n, true)
   return out
 }
 
+/** One escrow record's proof, ready to feed into stdinChunks. */
+export interface StdinRecord {
+  storeKey: Uint8Array
+  value: Uint8Array
+  merkleProofBytes: Uint8Array
+}
+
 /**
- * The ordered chunks one `SP1Stdin.write_slice`/`write_vec` call would push, for a single-record batch:
- * app hash, record count (=1), the record's ABI-encoded KVPair, then its raw MerkleProof protobuf bytes.
+ * The ordered chunks one `SP1Stdin.write_slice`/`write_vec` call would push, for `records.length` records
+ * proven together: app hash, record count, then each record's ABI-encoded KVPair followed by its raw
+ * MerkleProof protobuf bytes, in order. Every record must be proven at the same height (the same `appHash`).
  */
-export function stdinChunks(appHash: Uint8Array, storeKey: Uint8Array, value: Uint8Array, merkleProofBytes: Uint8Array): Uint8Array[] {
-  return [appHash, oneU16LE(), encodeKvPair(storeKey, value), merkleProofBytes]
+export function stdinChunks(appHash: Uint8Array, records: readonly StdinRecord[]): Uint8Array[] {
+  const chunks: Uint8Array[] = [appHash, countU16LE(records.length)]
+  for (const r of records) chunks.push(encodeKvPair(r.storeKey, r.value), r.merkleProofBytes)
+  return chunks
 }
 
 function u64le(n: number): Uint8Array {

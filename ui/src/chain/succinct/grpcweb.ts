@@ -7,6 +7,17 @@ import { BridgeError } from '../types'
 
 const SUCCINCT_MAINNET_RPC = 'https://rpc.mainnet.succinct.xyz'
 
+/** A grpc-status the server actually answered with (as opposed to BridgeError('Network', …), a transport failure). */
+export class GrpcError extends Error {
+  override readonly name = 'GrpcError'
+  /** Standard gRPC status code (0 OK, 5 NOT_FOUND, …). */
+  readonly code: number
+  constructor(code: number, message: string) {
+    super(message)
+    this.code = code
+  }
+}
+
 function frame(message: Uint8Array): Uint8Array {
   const out = new Uint8Array(5 + message.length)
   // byte 0: compression flag (0 = uncompressed); bytes 1-4: big-endian message length
@@ -66,10 +77,19 @@ export async function grpcWebCall(path: string, body: Uint8Array, fetchImpl: typ
   const buf = new Uint8Array(await res.arrayBuffer())
   if (!res.ok) throw new BridgeError('Network', `${path}: HTTP ${res.status}`)
 
+  // Trailers-Only: a call that fails immediately (no data frame at all) can arrive as plain HTTP headers with
+  // an empty body, not a trailer frame inside it. Live-verified (this session): a NOT_FOUND GetProgram answer
+  // came back exactly this way — HTTP 200, empty body, grpc-status/grpc-message as headers.
+  const headerStatus = res.headers.get('grpc-status')
+  if (headerStatus !== null && headerStatus !== '0') {
+    const message = res.headers.get('grpc-message')
+    throw new GrpcError(Number(headerStatus), `${path}: grpc-status ${headerStatus}${message ? `: ${decodeURIComponent(message)}` : ''}`)
+  }
+
   const frames = parseFrames(buf)
   const trailer = frames.find((f) => f.isTrailer)
   const { code, message } = trailer ? parseTrailerStatus(trailer.data) : { code: 0, message: '' }
-  if (code !== 0) throw new BridgeError('Unknown', `${path}: grpc-status ${code}${message ? `: ${message}` : ''}`)
+  if (code !== 0) throw new GrpcError(code, `${path}: grpc-status ${code}${message ? `: ${message}` : ''}`)
 
   const dataFrame = frames.find((f) => !f.isTrailer)
   return dataFrame?.data ?? new Uint8Array()

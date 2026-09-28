@@ -2,16 +2,17 @@ import { useId, useRef, useState } from 'react'
 import { useBridge } from '../../chain/context'
 import { href, navigate } from '../../router'
 import { POLL_MS, useHealth, useRememberedTrips, useTrips } from '../../trips/hooks'
-import type { KidId } from '../../chain/types'
+import type { EthAddress, KidId } from '../../chain/types'
 import type { Health, Trip, TripQuery } from '../../trips/types'
 import { ClaimButton, claimingHint, useClaimFlow, type ClaimFlow } from '../Claim'
 import { Card } from '../chrome/Card'
 import { ErrorNote } from '../ErrorNote'
 import { ExtLink } from '../ExtLink'
-import { dateTime, shortAddress, timeAgo } from '../format'
+import { dateTime, kidWord, shortAddress, timeAgo } from '../format'
 import { useFocusWhenDone, useHubNow } from '../hooks'
 import { KidArt, KidDoodle } from '../KidArt'
 import { parseLookup, type Lookup } from '../lookup'
+import { ProveButton, useProveFlow, type ProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { SpeedUp } from '../SpeedUp'
 import { StageList, TrackBar } from '../StageList'
@@ -45,6 +46,7 @@ export function KidsView({ address }: { address?: string }) {
   const trips = useTrips(query)
   const health = useHealth()
   const flow = useClaimFlow()
+  const prove = useProveFlow()
   // kids claimed from this page, kept here: a claim can re-key the list and remount its rows
   const [claimed, setClaimed] = useState<readonly KidId[]>([])
   const claim: ClaimFlow = {
@@ -67,6 +69,12 @@ export function KidsView({ address }: { address?: string }) {
   const crossing = crossingTrips.length
   // kids in one send usually share a recipient; if they don't, this speeds up whichever one's address it is
   const crossingRecipient = crossingTrips.find((t) => t.recipient)?.recipient ?? null
+  // Nudging only helps a kid Ethereum's light client hasn't caught up to yet. Once every crossing kid is at
+  // `proving`, it's already caught up for all of them — a nudge here couldn't move anything faster.
+  const nudgeHelps = crossingTrips.some((t) => t.stage !== 'proving')
+  const provingTrips = list.filter((t) => t.stage === 'proving')
+  // one proof/one submitBatch tx covers however many records are in it, at close to the cost of one
+  const provingRecipients = new Map(provingTrips.filter((t) => t.recipient).map((t) => [t.tokenId, t.recipient as EthAddress]))
   const title = mine ? 'My kids' : `Kids for ${shortAddress(target ?? '')}`
   useTitle(title)
 
@@ -139,8 +147,22 @@ export function KidsView({ address }: { address?: string }) {
                     : `Claim all ${ready.length}`}
               </ClaimButton>
             )}
+            {!deployment.demo && provingTrips.length > 1 && (
+              <ProveButton ids={provingTrips.map((t) => t.tokenId)} expectedRecipients={provingRecipients} flow={prove}>
+                {/* one proof covers the whole batch, at close to the cost of proving just one */}
+                {provingTrips.length === 2 ? 'Prove both' : `Prove all ${provingTrips.length}`}
+              </ProveButton>
+            )}
           </div>
-          {crossing > 0 && crossingRecipient && <SpeedUp recipient={crossingRecipient} n={crossing} />}
+          {crossing > 0 && crossingRecipient && (
+            <SpeedUp
+              recipient={crossingRecipient}
+              n={crossing}
+              disabledReason={
+                nudgeHelps ? undefined : `Ethereum already caught up to every ${kidWord(crossing)} here. A nudge wouldn't speed anything up.`
+              }
+            />
+          )}
           {ready.length > 0 && ethWallet.wrongChain && <SwitchChain />}
           {ready.length > 0 && !ethWallet.wrongChain && ethWallet.status !== 'connected' && (
             <p className="hint">Connect an Ethereum wallet to claim. Anyone can claim: kids always land at the address they were sent to.</p>
@@ -153,10 +175,18 @@ export function KidsView({ address }: { address?: string }) {
               tokenId={claim.failure.ids.length === 1 ? claim.failure.ids[0] : undefined}
             />
           )}
+          {prove.failure && (
+            <ErrorNote
+              error={prove.failure.error}
+              action="prove"
+              walletName={ethWallet.walletName}
+              tokenId={prove.failure.ids.length === 1 ? prove.failure.ids[0] : undefined}
+            />
+          )}
           {trips.error && <ErrorNote error={trips.error} action="read" onRetry={trips.refetch} live={false} />}
           <ul className="list" aria-label="Kids on the bridge">
             {list.map((t) => (
-              <TripRow key={t.tokenId} trip={t} health={health.data} claim={claim} claimedHere={claimed.includes(t.tokenId)} />
+              <TripRow key={t.tokenId} trip={t} health={health.data} claim={claim} prove={prove} claimedHere={claimed.includes(t.tokenId)} />
             ))}
           </ul>
           {/* always in the page, so screen readers hear each change */}
@@ -258,11 +288,13 @@ export function TripRow({
   trip,
   health,
   claim,
+  prove,
   claimedHere = false,
 }: {
   trip: Trip
   health: Health | undefined
   claim: ClaimFlow
+  prove: ProveFlow
   /** Claimed from this page: when it lands, its Claim button goes away, so focus moves to the kid. */
   claimedHere?: boolean
 }) {
@@ -288,6 +320,15 @@ export function TripRow({
           <ClaimButton ids={[trip.tokenId]} flow={claim}>
             Claim
           </ClaimButton>
+        )}
+        {!deployment.demo && trip.stage === 'proving' && (
+          <ProveButton
+            ids={[trip.tokenId]}
+            expectedRecipients={trip.recipient ? new Map([[trip.tokenId, trip.recipient]]) : undefined}
+            flow={prove}
+          >
+            Prove it yourself
+          </ProveButton>
         )}
         {token && (
           <ExtLink className="btn ghost" href={token} aria-label={`View #${trip.tokenId} on Etherscan`}>

@@ -4,33 +4,36 @@ import type { ProveStage } from '../chain/prove'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
 import { ConnectButton } from './Connect'
 import { ExtLink } from './ExtLink'
+import { kidList } from './format'
 import { useToast, type Toast } from './Toasts'
 
-// Mirrors Claim.tsx's useClaimFlow/ClaimButton pattern, for the browser-only "prove my own kid" flow
-// (issue #8): own kid only, one at a time, same wallet that would eventually submitBatch it.
+// Mirrors Claim.tsx's useClaimFlow/ClaimButton pattern, for the browser-only "prove my own kids" flow
+// (issue #8): own kids only, any number of them together in one batch, same wallet that would eventually
+// submitBatch it.
 
 /** Where the connected wallet manages its Succinct network PROVE balance. */
 const PROVE_ACCOUNT_URL = 'https://explorer.succinct.xyz/account'
 
-/** The toast once a kid's proof lands on Ethereum. */
-export function provenToast(id: KidId): Toast {
+/** The toast once one or more kids' proofs land on Ethereum. `ids` is whichever ones actually made it into
+ * the batch (see ProveKidsResult.proved) — can be fewer than what was asked for. */
+export function provenToast(ids: readonly KidId[]): Toast {
   return {
     tone: 'ok',
-    title: `Proved #${id}`,
+    title: `Proved ${ids.length > 3 ? `${ids.length} kids` : kidList(ids)}`,
     body: 'The proof landed on Ethereum. It can be claimed now.',
   }
 }
 
 export interface ProveFlow {
-  run: (id: KidId, expectedRecipient?: EthAddress) => Promise<void>
+  run: (ids: readonly KidId[], expectedRecipients?: ReadonlyMap<KidId, EthAddress>) => Promise<void>
   pending: boolean
-  /** The kid the running (or last) prove was for. */
-  proving: KidId | null
+  /** The kids the running (or last) prove batch was asked for. */
+  proving: readonly KidId[]
   stage: ProveStage | null
-  failure: { error: BridgeError; id: KidId } | null
+  failure: { error: BridgeError; ids: readonly KidId[] } | null
 }
 
-// COPY: prove-my-kid progress (button label and status line)
+// COPY: prove-my-kids progress (button label and status line)
 const STAGE_LABEL: Readonly<Record<ProveStage, string>> = {
   'finding-proof': 'Finding the proof…',
   'uploading-stdin': 'Uploading…',
@@ -43,26 +46,26 @@ const STAGE_LABEL: Readonly<Record<ProveStage, string>> = {
 export function useProveFlow(): ProveFlow {
   const { proveKid } = useBridge()
   const toast = useToast()
-  const [proving, setProving] = useState<KidId | null>(null)
+  const [proving, setProving] = useState<readonly KidId[]>([])
   const [stage, setStage] = useState<ProveStage | null>(null)
   const [failure, setFailure] = useState<ProveFlow['failure']>(null)
 
-  const run = async (id: KidId, expectedRecipient?: EthAddress) => {
-    if (!proveKid) return
-    setProving(id)
+  const run = async (ids: readonly KidId[], expectedRecipients?: ReadonlyMap<KidId, EthAddress>) => {
+    if (!proveKid || ids.length === 0) return
+    setProving(ids)
     setStage(null)
     setFailure(null)
     try {
-      await proveKid.proveKid(id, { expectedRecipient, onStage: setStage })
-      toast(provenToast(id))
+      const result = await proveKid.proveKids(ids, { expectedRecipients, onStage: setStage })
+      toast(provenToast(result.proved))
     } catch (e) {
-      setFailure({ error: e as BridgeError, id })
+      setFailure({ error: e as BridgeError, ids })
     } finally {
-      setProving(null)
+      setProving([])
       setStage(null)
     }
   }
-  return { run, pending: proving !== null, proving, stage, failure }
+  return { run, pending: proving.length > 0, proving, stage, failure }
 }
 
 /**
@@ -109,37 +112,40 @@ export function ProveBalanceNote() {
   )
 }
 
-/** A "Prove it yourself" button for a kid whose proof hasn't landed yet. Without a wallet it opens the connect sheet. */
+/** A "Prove it yourself" button for one or more kids whose proof hasn't landed yet, batched into one proof and
+ * one submitBatch tx. Without a wallet it opens the connect sheet. */
 export function ProveButton({
-  id,
-  expectedRecipient,
+  ids,
+  expectedRecipients,
   flow,
   children,
 }: {
-  id: KidId
-  /** Checked against the Hub's own record before proving (see chain/prove.ts). */
-  expectedRecipient?: EthAddress
+  ids: readonly KidId[]
+  /** Per-id, checked against the Hub's own record before proving (see chain/prove.ts). */
+  expectedRecipients?: ReadonlyMap<KidId, EthAddress>
   flow: ProveFlow
   children: string
 }) {
   const { ethWallet, proveKid } = useBridge()
+  // finds this button again after a connect, even if the list around it re-rendered from scratch
+  const key = ids.join(' ')
   if (!proveKid) {
     return (
-      <ConnectButton chain="eth" className="btn eth ghost" focusAfter={() => document.querySelector<HTMLElement>(`[data-prove="${id}"]`)}>
+      <ConnectButton chain="eth" className="btn eth ghost" focusAfter={() => document.querySelector<HTMLElement>(`[data-prove="${key}"]`)}>
         {children}
       </ConnectButton>
     )
   }
-  const mine = flow.proving === id
+  const mine = ids.some((id) => flow.proving.includes(id))
   return (
     <button
       type="button"
       className="btn eth ghost"
-      data-prove={id}
+      data-prove={key}
       disabled={ethWallet.wrongChain === true}
       aria-disabled={flow.pending || undefined}
       onClick={() => {
-        if (!flow.pending) void flow.run(id, expectedRecipient)
+        if (!flow.pending) void flow.run(ids, expectedRecipients)
       }}
     >
       {mine && flow.stage ? STAGE_LABEL[flow.stage] : children}

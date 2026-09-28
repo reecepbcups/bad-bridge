@@ -116,7 +116,7 @@ function Kid({ id }: { id: KidId }) {
           {claim.failure && <ErrorNote error={claim.failure.error} action="claim" walletName={ethWallet.walletName} tokenId={id} />}
           {!deployment.demo && t.stage === 'proving' && (
             <div className="row start">
-              <ProveButton id={id} expectedRecipient={t.recipient ?? undefined} flow={prove}>
+              <ProveButton ids={[id]} expectedRecipients={t.recipient ? new Map([[id, t.recipient]]) : undefined} flow={prove}>
                 Prove it yourself
               </ProveButton>
               <span className="hint">Normally the batcher proves it for you. This does it now, from your wallet.</span>
@@ -124,7 +124,14 @@ function Kid({ id }: { id: KidId }) {
           )}
           {!deployment.demo && t.stage === 'proving' && <ProveBalanceNote />}
           {t.stage === 'proving' && ethWallet.wrongChain && <SwitchChain />}
-          {prove.failure && <ErrorNote error={prove.failure.error} action="prove" walletName={ethWallet.walletName} tokenId={id} />}
+          {prove.failure && (
+            <ErrorNote
+              error={prove.failure.error}
+              action="prove"
+              walletName={ethWallet.walletName}
+              tokenId={prove.failure.ids.length === 1 ? prove.failure.ids[0] : undefined}
+            />
+          )}
           {sent && <StageList facts={t} health={health.data} />}
 
           <dl className="facts">
