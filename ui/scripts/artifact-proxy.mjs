@@ -25,7 +25,7 @@ const ALLOWED_HOST_SUFFIX = '.amazonaws.com' // only forward to Succinct's artif
 /** @param {ServerResponse} res */
 function withCors(res) {
   res.setHeader('access-control-allow-origin', '*')
-  res.setHeader('access-control-allow-methods', 'PUT, OPTIONS')
+  res.setHeader('access-control-allow-methods', 'PUT, GET, OPTIONS')
   res.setHeader('access-control-allow-headers', 'content-type')
 }
 
@@ -57,9 +57,10 @@ async function handleRequest(req, res) {
   }
 
   const url = req.url ?? ''
-  if (req.method !== 'PUT' || !url.startsWith('/upload')) {
+  const isDownload = req.method === 'GET' && url.startsWith('/download')
+  if (!isDownload && !(req.method === 'PUT' && url.startsWith('/upload'))) {
     res.writeHead(404)
-    res.end('not found — PUT /upload?url=<encoded presigned url>')
+    res.end('not found. PUT /upload?url=<encoded presigned url> or GET /download?url=<encoded url>')
     return
   }
 
@@ -80,6 +81,21 @@ async function handleRequest(req, res) {
   if (!targetUrl.hostname.endsWith(ALLOWED_HOST_SUFFIX)) {
     res.writeHead(403)
     res.end(`refusing to proxy to ${targetUrl.hostname}: only *${ALLOWED_HOST_SUFFIX} is allowed`)
+    return
+  }
+
+  if (isDownload) {
+    try {
+      const upstream = await fetch(targetUrl)
+      const bytes = Buffer.from(await upstream.arrayBuffer())
+      console.log(`GET ${targetUrl.hostname}${targetUrl.pathname} <- ${upstream.status} (${bytes.length} bytes)`)
+      res.writeHead(upstream.status, { 'content-type': 'application/octet-stream' })
+      res.end(bytes)
+    } catch (e) {
+      console.error('  download failed:', e)
+      res.writeHead(502)
+      res.end(String(e))
+    }
     return
   }
 

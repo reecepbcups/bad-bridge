@@ -281,7 +281,18 @@ async function getProofRequestStatus(requestId: Uint8Array, fetchImpl: typeof fe
 }
 
 async function downloadArtifact(uri: string, fetchImpl: typeof fetch): Promise<Uint8Array> {
-  const res = await fetchImpl(uri)
+  // Same CORS gap as the upload, see uploadArtifact.
+  const target = ARTIFACT_PROXY_URL ? `${ARTIFACT_PROXY_URL}/download?url=${encodeURIComponent(uri)}` : uri
+  let res: Response
+  try {
+    res = await fetchImpl(target)
+  } catch (e) {
+    throw new BridgeError(
+      'ArtifactUploadBlocked',
+      "browsers can't download from Succinct's artifact bucket directly yet (no CORS policy there). Run `node scripts/artifact-proxy.mjs` and set VITE_ARTIFACT_PROXY_URL",
+      { cause: e },
+    )
+  }
   if (!res.ok) throw new BridgeError('Network', `proof download: HTTP ${res.status}`)
   return new Uint8Array(await res.arrayBuffer())
 }
