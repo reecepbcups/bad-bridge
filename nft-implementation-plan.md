@@ -4,6 +4,8 @@ The why is in `nft-features.md`. This file is the how: what changes, in what ord
 
 Branch: `worktree-nft-features`, cut from `main` at `40e7ff3`.
 
+Status: steps 0-6 done 2026-09-28. Numbers and deviations are under "Results" at the bottom.
+
 ## Decisions (2026-09-28)
 
 | | Decision |
@@ -193,13 +195,30 @@ Don't push or open a PR until asked.
 - The `contractURI` JSON content and its IPFS pin, which needs input from the creators
 - Frontend. The other agent owns it, and `nft-features.md` section 8 is the handoff
 
-## Results
+## Results (2026-09-28)
 
-To fill in during steps 0 and 6.
+From a single claim to a fresh address, then one transfer. Optimizer on for "After" (see deviations).
 
-| | Before | After |
+| | Before (`40e7ff3`, no optimizer) | After |
 |-|-|-|
-| `claim` gas | | |
-| `submitBatch` gas (1 record) | | |
-| `transfer` gas | | |
-| `BadBridge` runtime size | | |
+| `claim` gas | 70,849 | 167,775 |
+| `submitBatch` gas (1 record, mocked verifier) | 74,603 | 69,622 |
+| `transferFrom` gas | 55,585 | 117,481 |
+| `BadBridge` runtime size | 13,471 B | 13,974 B (10,602 B headroom) |
+| Deploy gas | 3,077,821 | 3,269,471 |
+
+For comparison, the original code with the optimizer on: `claim` 70,550, `transferFrom` 55,032, runtime 7,551 B. So votes cost about +97k per first claim and +62k per transfer. Self-delegation was kept knowing that (2026-09-28).
+
+Tests: 41 unit and fuzz tests, 4 invariants across 2 suites.
+
+Fork run (step 5), `forge script` against mainnet state via publicnode, no broadcast:
+
+- `E2E.s.sol` with the 2026-09-23 proof (Hub height 33092173, escrow `0xdc1f…182b`, token 1). Went through the real `cosmoshub-0` client and SP1 verifier. Minted to `0xD2C3…9775`, holder votes 1, total supply 1
+- `Deploy.s.sol` logged owner, royalty receiver, 5% royalty, and `contractURI` as configured. With `ROYALTY_BPS` unset it reverts
+
+### Deviations from the plan
+
+- **Optimizer on (200 runs)**, its own commit. Votes took the unoptimized runtime to 21.7 KB of 24 KB. Approved 2026-09-28
+- **Scripts landed with step 2**, not step 4. The constructor change broke both scripts, and `forge build` compiles them
+- **Step 5 used `forge script --fork-url`**, not a separate Anvil. Same state, and nothing to clean up
+- **Full invariant runs are slow**: 5,000 runs × 500 depth took ~50 min per suite. While iterating we ran them with `FOUNDRY_INVARIANT_RUNS=64 FOUNDRY_INVARIANT_DEPTH=100`

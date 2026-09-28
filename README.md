@@ -42,7 +42,7 @@ Things we found along the way:
 | Piece | Where | What |
 |-|-|-|
 | escrow | `escrow/` | CosmWasm, raw record storage, `pending` query, rejects wrong collection / bad address / replays |
-| bridge | `eth/` | `BadBridge.sol`, ERC721 + proof check + strict `parse()`, no owner |
+| bridge | `eth/` | `BadBridge.sol`, ERC721 + votes + proof check + strict `parse()`. The owner can only set the royalty and `contractURI` |
 | batcher | `batcher/service/` | Rust, finds unproven records, proves via Succinct network, submits |
 
 Tested on an Anvil mainnet fork first with a real Groth16 proof.

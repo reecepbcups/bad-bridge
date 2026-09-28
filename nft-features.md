@@ -58,7 +58,7 @@ function _transferVotingUnits(address from, address to, uint256 amount) internal
 
 Trade-offs of self-delegation by default:
 
-- Every transfer writes two account checkpoints (sender and receiver). Mints write one plus the total supply checkpoint. Measure with `forge snapshot`. At the 0.13-0.26 gwei seen on 2026-09-23 this is cents.
+- Every transfer writes two account checkpoints (sender and receiver). Mints write one plus the total supply checkpoint. Measured: a transfer goes from 55.6k to 117.5k gas, and a first claim from 70.8k to 167.8k. That's about 0.000012 ETH extra per transfer at 0.2 gwei, and about 0.0012 ETH at 20 gwei. Kept anyway (2026-09-28).
 - Kids held by lending or escrow contracts carry votes to that contract. Seaport doesn't hold NFTs, so normal OpenSea listings are unaffected.
 
 ### Things for the later Governor, not this contract
@@ -231,7 +231,7 @@ Notes:
 
 - `delegates(address(0))` still returns `address(0)`, so mints and burns keep the zero-address path in `_transferVotingUnits` intact.
 - `_setDefaultRoyalty` already reverts on a zero receiver and on bps above 10000. The cap is ours.
-- Bytecode grows. The deploy was 2.95M gas. Check it stays under 24 KB with `forge build --sizes`.
+- Bytecode grows. Without the optimizer, votes alone took the runtime to 21.7 KB of the 24 KB limit, so the optimizer is now on (200 runs). The finished contract is 13.97 KB.
 
 ---
 
@@ -277,8 +277,11 @@ Still open. These are deploy-time values and don't block the code:
 
 For whoever is building the frontend:
 
-- New reads: `getVotes`, `delegates`, `totalSupply`, `royaltyInfo`, `contractURI`, `owner`, `clock`, `CLOCK_MODE`
-- New writes: `claimMany(uint32[])`, `delegate(address)`, `delegateBySig(...)`
+- New reads: `getVotes`, `getPastVotes`, `getPastTotalSupply`, `delegates`, `nonces`, `totalSupply`, `royaltyInfo`, `contractURI`, `owner`, `pendingOwner`, `MAX_ROYALTY_BPS`, `clock`, `CLOCK_MODE`
+- New writes: `claimMany(uint32[])`, `delegate(address)`, `delegateBySig(...)`. Owner only: `setRoyalty`, `setContractURI`, `transferOwnership`, `acceptOwnership`, `renounceOwnership`
 - New events: `DelegateChanged`, `DelegateVotesChanged`, `ContractURIUpdated`, `OwnershipTransferStarted`, `OwnershipTransferred`
+- New error: `RoyaltyTooHigh(uint96)`
+- `delegates(holder)` returns the holder itself when they haven't picked anyone, never `address(0)`
+- `delegateBySig` uses the EIP-712 domain name = collection name, version `"1"`
 - Unchanged: `claim`, `submitBatch`, `proven`, `parse`, `Proven`
 - The constructor has four extra args. Deploy tooling that builds constructor calldata has to change

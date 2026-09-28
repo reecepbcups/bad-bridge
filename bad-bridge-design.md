@@ -379,21 +379,24 @@ Skip any one of these and an attacker proves an arbitrary key from an arbitrary 
 
 - **Token IDs mirror Cosmos exactly.** #7012 is #7012, not sequential mint order.
 - **`tokenURI` points at the same IPFS CIDs.** Same art, no re-hosting, no new trust assumption.
-- **Bridge is sole minter, ownership renounced.** ERC-2981 royalties, if any, immutable at deploy.
+- **Bridge is sole minter.** The owner can set the ERC-2981 royalty (capped at 10%) and `contractURI`, nothing else.
 - **Replay protection keyed on token ID**, not on batch or proof. A record can legitimately appear in multiple proofs if the batcher's pending-set bookkeeping drifts.
 
 ### Actual (`eth/src/BadBridge.sol`)
 
-131 lines. It differs from the sketch above in these ways:
+251 lines. It differs from the sketch above in these ways:
 
-- **No `claimed` mapping.** `_mint` already reverts on an existing token ID, so a second claim can't mint twice.
+- **No `claimed` mapping.** `_mint` already reverts on an existing token ID, so a second claim can't mint twice. That only holds because nothing can burn.
 - **`_mint`, not `_safeMint`.** If the recipient is a contract without `onERC721Received`, `_safeMint` would revert every time and strand the kid.
-- **No owner at all**, so there's nothing to renounce. There are no royalties either.
+- **Limited owner** (`Ownable2Step`). It can set the ERC-2981 royalty (capped at 10%) and the ERC-7572 `contractURI`. It can't mint, move kids, or touch `baseURI`, `ESCROW`, `ROUTER`, `clientId` or `proven`. The owner exists so the collection can be claimed on OpenSea. See `nft-features.md`.
+- **`ERC721Votes`** with a timestamp clock. Holders count as delegated to themselves unless they pick someone, and `delegate(address(0))` maps back to self so votes can't be lost. `totalSupply()` reads the votes checkpoints.
+- **`claimMany(ids)`** claims a batch and skips ids already claimed.
 - `_parse` is public `parse(kv, index)` and reverts with `BadPath(index)`. It checks `key.length == 38`, which covers the "exactly 4 bytes, nothing else" rule.
 - `clientId` is a constructor arg, and the client is resolved through `ROUTER.getClient` on every `submitBatch`.
 - A `Proven(tokenId, recipient)` event fires the first time a kid gets recorded.
+- Built with the optimizer on (200 runs). Without it, votes push the runtime to 21.7 KB of the 24 KB limit.
 
-Tests in `eth/test/BadBridge.t.sol` cover submit + claim, a double claim, claiming to a contract with no receiver, `parse` rejects, a wrong root or vkey, and a fuzz run of `parse` against the exact layout.
+Tests in `eth/test/BadBridge.t.sol` cover submit + claim, a double claim, claiming to a contract with no receiver, `parse` rejects, a wrong root or vkey, fuzz runs of `parse` against the exact layout, votes and delegation (including `delegateBySig`), the owner surface, and `claimMany`. Two invariant suites: records stick and mints match, and votes always add up to supply while kids move and get delegated.
 
 ---
 
@@ -411,6 +414,13 @@ From the upstream end-to-end benchmarks:
 
 Actual, mainnet 2026-09-23, 1 kid per batch: `submitBatch` **314,805**, `claim` **78,725**, deploy ~2.95M.
 
+Votes make claims and transfers more expensive, because every holder now has vote checkpoints. From the forge gas report, first claim to a fresh address:
+
+| | Before votes | With votes |
+|-|-|-|
+| `claim` | 70,849 | 167,775 |
+| `transferFrom` | 55,585 | 117,481 |
+
 The fixed ~230k plus prover fee applies per batch regardless of size. With opt-in trickle volume that overhead cannot be amortized on a schedule you control, which is exactly why the three-transaction split matters: whoever wants to go now pays the full fixed cost, everyone else waits and splits it.
 
 ---
@@ -424,6 +434,7 @@ The fixed ~230k plus prover fee applies per batch regardless of size. With opt-i
 | Risk | Mitigation |
 |---|---|
 | Escrow admin rug | `admin: None`. Non-negotiable. |
+| Bridge owner key lost or stolen | Worst case: royalties redirected (max 10%) or a bad `contractURI`. Can't mint, move kids or change `tokenURI`. Hold it in a Safe. `Ownable2Step` stops a typo from sending ownership to a dead address. |
 | `_parse` bug mints arbitrary tokens | Strict prefix validation plus fuzzing. Primary audit target. |
 | Malformed recipient strands an NFT | Validate 20-byte length at commit, fail the receive. |
 | Off-by-one on proof height | Query at `H-1`. Section 2.4. |
@@ -460,7 +471,7 @@ Then:
 4. Fuzz `_parse` until it is boring. Started: there's one fuzz test, and it needs more runs and more cases
 5. Frontend, with the liquidity disclosure on the commit screen
 6. Audit, scoped to `_parse` and the escrow receive path
-7. Mainnet, ownership renounced, admin absent
+7. Mainnet, escrow admin absent, bridge owner a Safe with cosmetic powers only
 
 **E2E result (2026-09-23): works on mainnet.** A test escrow was proven at Hub height 33092173 (queried at `H-1` 33092172). Token 1 was minted to `0xd2c3...9775`, all through the real `cosmoshub-0` client and the real SP1 verifier.
 
@@ -473,7 +484,7 @@ Then:
 | `Deploy.s.sol` BadBridge (`ReeceBadTest`) | `0xde185d7902340086cc4c37322584e246dc5ee198` |
 | its escrow | `cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv` |
 
-These are test deploys, not the real collection. `Deploy.s.sol` is the production script: no owner, and `ESCROW` comes from env.
+These are test deploys, not the real collection. `Deploy.s.sol` is the production script: `ESCROW`, `OWNER`, `ROYALTY_BPS` and `CONTRACT_URI` come from env and are required.
 
 ---
 
