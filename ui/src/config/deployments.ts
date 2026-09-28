@@ -53,6 +53,8 @@ export interface Explorers {
   ethToken(tokenId: number): string | null
   /** OpenSea page for one bridged kid. null until the bridge exists. */
   opensea(tokenId: number): string | null
+  /** OpenSea collection page for the bridged contract. null until the bridge exists. */
+  openseaCollection(): string | null
 }
 
 export interface Deployment {
@@ -92,6 +94,7 @@ function explorers(bridge: Address | null): Explorers {
     ethAddress: (address) => `https://etherscan.io/address/${address}`,
     ethToken: (tokenId) => (bridge ? `https://etherscan.io/nft/${bridge}/${tokenId}` : null),
     opensea: (tokenId) => (bridge ? `https://opensea.io/assets/ethereum/${bridge}/${tokenId}` : null),
+    openseaCollection: () => (bridge ? `https://opensea.io/assets/ethereum/${bridge}` : null),
   }
 }
 

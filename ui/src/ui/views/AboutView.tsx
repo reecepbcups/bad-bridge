@@ -174,6 +174,14 @@ export function AboutView() {
               <span className="muted">not live yet</span>
             )}
           </dd>
+          <dt>OpenSea</dt>
+          <dd>
+            {explorer.openseaCollection() ? (
+              <ExtLink href={explorer.openseaCollection() as string}>{deployment.collectionName}</ExtLink>
+            ) : (
+              <span className="muted">not live yet</span>
+            )}
+          </dd>
           <dt>Hub light client (Ethereum)</dt>
           <dd>
             <ExtLink className="mono" href={explorer.ethAddress(eth.lightClient)}>
