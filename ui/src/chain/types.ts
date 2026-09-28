@@ -191,6 +191,42 @@ export interface SendOptions {
  */
 export type ClaimStage = 'signing' | 'confirming'
 
+/**
+ * Where a submitBatch call is, in order:
+ * - `signing`: simulated; the wallet prompt is up.
+ * - `confirming`: signed and sent; waiting for it to be mined.
+ */
+export type BatchStage = 'signing' | 'confirming'
+
+/** Options for EthWriter.submitBatch (or the standalone submitBatch, on writers that don't carry it). */
+export interface BatchOptions {
+  /** Called as the call reaches each stage. Never called after the promise settles; a callback that throws is ignored. */
+  onStage?: (stage: BatchStage) => void
+}
+
+/** BadBridge.sol's ConsensusState struct — an input to submitBatch. */
+export interface ConsensusStateArgs {
+  /** Nanoseconds since the epoch. */
+  timestamp: bigint
+  /** 32-byte app hash. */
+  root: Hex
+  /** 32-byte next validators hash. */
+  nextValidatorsHash: Hex
+}
+
+/** BadBridge.sol's SP1Proof struct — an input to submitBatch. */
+export interface Sp1ProofArgs {
+  vKey: Hex
+  publicValues: Hex
+  proof: Hex
+}
+
+/** A mined submitBatch call. */
+export interface SubmitBatchResult {
+  /** Ethereum tx hash. */
+  txHash: Hex
+}
+
 /** Options for EthWriter.claim. */
 export interface ClaimOptions {
   /** Called as the claim reaches each stage. Never called after the promise settles; a callback that throws is ignored. */

@@ -10,12 +10,17 @@ import type { Deployment } from '../../config/deployments'
 import {
   BridgeError,
   stageReporter,
+  type BatchOptions,
+  type BatchStage,
   type ClaimResult,
   type ClaimStage,
+  type ConsensusStateArgs,
   type EthAddress,
   type EthReader,
   type EthWriter,
   type KidId,
+  type Sp1ProofArgs,
+  type SubmitBatchResult,
 } from '../types'
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
@@ -54,6 +59,17 @@ export type EthWriterDeps = {
 
 /** Progress for one claim; `signing` goes out just before the wallet is asked. */
 type Report = (stage: ClaimStage) => void
+/** Progress for one submitBatch call. */
+type BatchReport = (stage: BatchStage) => void
+
+/** An EthWriter that also carries submitBatch, for the proof page (createEthWriter returns this). */
+export interface EthWriterWithBatch extends EthWriter {
+  /**
+   * Anyone can submit a batch (it's checked on-chain, not by msg.sender) — this always uses the connected
+   * wallet, same as claim. `options.onStage` reports signing → confirming.
+   */
+  submitBatch(proofHeight: bigint, cs: ConsensusStateArgs, sp1Proof: Sp1ProofArgs, options?: BatchOptions): Promise<SubmitBatchResult>
+}
 
 /** Splits requested ids into what can be claimed now, and why the rest can't. */
 export function sortClaimable(ids: readonly KidId[], status: Map<KidId, { proven: unknown; owner: unknown }>) {
@@ -91,7 +107,7 @@ function nothingToClaim(minted: readonly KidId[], unproven: readonly KidId[]): B
  * 4. simulates, sends, waits for the receipt and fails if it reverted.
  * `onStage` hears `signing` right before the wallet is asked, and `confirming` once the tx is sent.
  */
-export function createEthWriter(deps: EthWriterDeps): EthWriter {
+export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
   const { deployment, publicClient } = deps
   const reader = deps.reader ?? createEthReader(deployment, { client: publicClient })
   const address = 'walletClient' in deps ? deps.walletClient.account.address : deps.address
@@ -106,6 +122,25 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       abi: bridgeAbi,
       functionName: 'claim',
       args: [id],
+    })
+    report('signing')
+    return writeContract(wallet, { ...request, account: wallet.account, chain })
+  }
+
+  async function submitBatchTx(
+    wallet: SignerClient,
+    bridge: Address,
+    proofHeight: bigint,
+    cs: ConsensusStateArgs,
+    sp1Proof: Sp1ProofArgs,
+    report: BatchReport,
+  ): Promise<Hex> {
+    const { request } = await simulateContract(publicClient, {
+      account: wallet.account,
+      address: bridge,
+      abi: bridgeAbi,
+      functionName: 'submitBatch',
+      args: [proofHeight, cs, sp1Proof],
     })
     report('signing')
     return writeContract(wallet, { ...request, account: wallet.account, chain })
@@ -189,6 +224,29 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     return { txHash: receipt.transactionHash, claimed }
   }
 
+  async function submitBatch(proofHeight: bigint, cs: ConsensusStateArgs, sp1Proof: Sp1ProofArgs, report: BatchReport): Promise<SubmitBatchResult> {
+    const bridge = requireBridge(deployment)
+    const wallet = await getWallet()
+    const walletChain = await getChainId(wallet)
+    if (walletChain !== chain.id) {
+      throw new BridgeError('WrongChain', `wallet is on chain ${walletChain}, the bridge is on ${chain.name} (${chain.id})`)
+    }
+
+    const hash = await submitBatchTx(wallet, bridge, proofHeight, cs, sp1Proof, report)
+    report('confirming')
+    let cancelled = false
+    const receipt = await waitForTransactionReceipt(publicClient, {
+      hash,
+      timeout: RECEIPT_TIMEOUT_MS,
+      onReplaced: (r) => {
+        cancelled = r.reason === 'cancelled'
+      },
+    })
+    if (cancelled) throw new BridgeError('UserRejected', `submitBatch ${hash} was cancelled in the wallet`)
+    if (receipt.status !== 'success') throw new BridgeError('Unknown', `submitBatch transaction ${receipt.transactionHash} reverted`)
+    return { txHash: receipt.transactionHash }
+  }
+
   return {
     address,
     claim: async (ids, options) => {
@@ -197,6 +255,16 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
         return await claim(ids, stage.report)
       } catch (e) {
         throw toEthError(e, ids.length === 1 ? ids[0] : undefined)
+      } finally {
+        stage.done()
+      }
+    },
+    submitBatch: async (proofHeight, cs, sp1Proof, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        return await submitBatch(proofHeight, cs, sp1Proof, stage.report)
+      } catch (e) {
+        throw toEthError(e)
       } finally {
         stage.done()
       }
