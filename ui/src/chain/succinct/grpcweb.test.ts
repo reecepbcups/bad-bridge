@@ -7,7 +7,7 @@ import { grpcWebCall } from './grpcweb'
 const LIVE_OK_RESPONSE = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0f, 0x67, 0x72, 0x70, 0x63, 0x2d, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x3a, 0x30, 0x0d, 0x0a])
 
 function fakeFetch(body: Uint8Array, status = 200): typeof fetch {
-  return (async () => new Response(body, { status, headers: { 'content-type': 'application/grpc-web+proto' } })) as typeof fetch
+  return () => Promise.resolve(new Response(body, { status, headers: { 'content-type': 'application/grpc-web+proto' } }))
 }
 
 describe('grpcWebCall', () => {
