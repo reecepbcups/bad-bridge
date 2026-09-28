@@ -36,7 +36,7 @@ Eureka light client: `0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9`
 
 - cw721: same as above
 - escrow: `cosmos1rce3kmvc2v955f64gp8cjtwqzma3qg8t4puk7swmqd56j25gfqgq3s8037`
-- bridge: TBD
+- bridge: `0xdDef181a0b9F5A090830F9ccBE5Ffb0D2BA07A7e`
 - owner: `0xd0D72e3b30e3527490d5526456d58d1ea32905E0`
 
 ## Gotchas we hit
