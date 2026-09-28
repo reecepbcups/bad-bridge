@@ -18,7 +18,7 @@ import type { EthWriterWithBatch } from './eth/writer'
 import { escrowRaw, proofHeader, proveAt, storeKey } from './hub/prove'
 import { encodeSp1Stdin, stdinChunks, type StdinRecord } from './hub/stdin'
 import { createTransport } from './hub/transport'
-import { getProveBalance, type SuccinctStage } from './succinct/client'
+import { getProveBalance, type ProofRequestProgress, type SuccinctStage } from './succinct/client'
 import { BridgeError, type EthAddress, type KidId } from './types'
 
 export type ProveStage = 'finding-proof' | SuccinctStage | 'signing' | 'confirming'
@@ -34,6 +34,13 @@ export type ProveStage = 'finding-proof' | SuccinctStage | 'signing' | 'confirmi
  */
 const MEMBERSHIP_VK_BASE64 =
   'uGsAAAF4AAAAAAAAm5n5cNPZczk4H187KIagQAJmCwUvC/Ffc79eGpL39T7c8KpRHjUkEQTnPwu27GkO0Y7hGXvCcV/gG/waQO39QZpDVh9/BqING0DiLjhtMl6otMtC/4oxXgAAAAA='
+/**
+ * The vk hash Succinct's network keys programs by: the SDK's get_vk_hash, i.e. vk.hash_bytes(). Not the same
+ * encoding as the on-chain MEMBERSHIP_PROGRAM_VKEY (bytes32()), which only the Ethereum side uses. Requesting
+ * with the on-chain form makes the network's proof verification fail. Read off the batcher's successful
+ * mainnet request, and its GetProgram vk matches MEMBERSHIP_VK_BASE64 byte for byte.
+ */
+const MEMBERSHIP_NETWORK_VK_HASH: Hex = '0x05ec76217a996e1710fd6af54e44692c19497f945f807ca528573f6876ed3e4f'
 const MEMBERSHIP_ELF_URL = '/membership.elf'
 
 async function fetchMembershipElf(): Promise<Uint8Array> {
@@ -45,6 +52,8 @@ async function fetchMembershipElf(): Promise<Uint8Array> {
 export interface ProveKidsOptions {
   /** Called as the flow reaches each stage. Never called after the promise settles. */
   onStage?: (stage: ProveStage) => void
+  /** Called with the Succinct request id and its live status while proving. */
+  onProgress?: (progress: ProofRequestProgress) => void
   /**
    * Per-id recipient the caller already believes each kid is headed to (e.g. from useTrip). Checked against
    * the Hub's own record before proving — the same sanity check the Rust batcher makes (hub.rs's
@@ -129,7 +138,7 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     const vkHash = await readContract(publicClient, { address: lightClient, abi: lightClientAbi, functionName: 'MEMBERSHIP_PROGRAM_VKEY' })
 
     const stdinBytes = encodeSp1Stdin(stdinChunks(header.appHash, records))
-    const decoded = await ethWriter.requestGroth16Proof(vkHash, stdinBytes, { onStage })
+    const decoded = await ethWriter.requestGroth16Proof(MEMBERSHIP_NETWORK_VK_HASH, stdinBytes, { onStage, onProgress: options?.onProgress })
 
     const cs = { timestamp: header.timestampNs, root: bytesToHex(header.appHash), nextValidatorsHash: bytesToHex(header.nextValidatorsHash) }
     const sp1Proof = { vKey: vkHash, publicValues: decoded.publicValues, proof: decoded.proofBytes }
@@ -146,11 +155,9 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
   }
 
   async function registerProgram(): Promise<void> {
-    const bridge = requireBridge(deployment)
-    const lightClient = await readContract(publicClient, { address: bridge, abi: bridgeAbi, functionName: 'lightClient' })
-    const vkHash = await readContract(publicClient, { address: lightClient, abi: lightClientAbi, functionName: 'MEMBERSHIP_PROGRAM_VKEY' })
+    requireBridge(deployment)
     const elf = await fetchMembershipElf()
-    await ethWriter.registerProgram(vkHash, fromBase64(MEMBERSHIP_VK_BASE64), elf)
+    await ethWriter.registerProgram(MEMBERSHIP_NETWORK_VK_HASH, fromBase64(MEMBERSHIP_VK_BASE64), elf)
   }
 
   return { proveKid, proveKids, proveBalance: () => getProveBalance(ethWriter.address), registerProgram }

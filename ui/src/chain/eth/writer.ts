@@ -22,7 +22,7 @@ import {
   type Sp1ProofArgs,
   type SubmitBatchResult,
 } from '../types'
-import { registerProgram as registerProgramImpl, requestGroth16Proof as requestGroth16ProofImpl, type SuccinctStage } from '../succinct/client'
+import { registerProgram as registerProgramImpl, requestGroth16Proof as requestGroth16ProofImpl, type ProofRequestProgress, type SuccinctStage } from '../succinct/client'
 import type { DecodedGroth16Proof } from '../succinct/proof'
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
@@ -75,7 +75,11 @@ export interface EthWriterWithBatch extends EthWriter {
    * Requests a Groth16 membership proof from Succinct's network, signing with the same connected wallet
    * that would submitBatch it. The wallet client stays inside this module — callers never see it.
    */
-  requestGroth16Proof(vkHash: Hex, stdinBytes: Uint8Array, options?: { onStage?: (stage: SuccinctStage) => void }): Promise<DecodedGroth16Proof>
+  requestGroth16Proof(vkHash: Hex, stdinBytes: Uint8Array, options?: {
+      onStage?: (stage: SuccinctStage) => void
+      onProgress?: (progress: ProofRequestProgress) => void
+    },
+  ): Promise<DecodedGroth16Proof>
   /**
    * Registers a guest program on Succinct's network (a no-op if it's already registered), signing with the
    * same connected wallet. Anyone can register any program — this isn't gated to whoever built it.
@@ -263,9 +267,10 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
     vkHash: Hex,
     stdinBytes: Uint8Array,
     onStage: ((stage: SuccinctStage) => void) | undefined,
+    onProgress: ((progress: ProofRequestProgress) => void) | undefined,
   ): Promise<DecodedGroth16Proof> {
     const wallet = await getWallet()
-    return requestGroth16ProofImpl({ wallet, vkHash, stdinBytes, onStage })
+    return requestGroth16ProofImpl({ wallet, vkHash, stdinBytes, onStage, onProgress })
   }
 
   async function registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void> {
@@ -297,7 +302,7 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
     },
     requestGroth16Proof: async (vkHash, stdinBytes, options) => {
       try {
-        return await requestGroth16Proof(vkHash, stdinBytes, options?.onStage)
+        return await requestGroth16Proof(vkHash, stdinBytes, options?.onStage, options?.onProgress)
       } catch (e) {
         throw toEthError(e)
       }

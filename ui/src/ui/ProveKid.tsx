@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useBridge } from '../chain/context'
 import type { ProveStage } from '../chain/prove'
+import type { ProofRequestProgress } from '../chain/succinct/client'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
 import { ConnectButton } from './Connect'
 import { ErrorNote } from './ErrorNote'
@@ -12,6 +13,29 @@ import { useToast, type Toast } from './Toasts'
 // Mirrors Claim.tsx's useClaimFlow/ClaimButton pattern, for the browser-only "prove my own kids" flow
 // (issue #8): own kids only, any number of them together in one batch, same wallet that would eventually
 // submitBatch it.
+
+/** Succinct's explorer page for one proof request. */
+const PROVE_REQUEST_URL = 'https://explorer.succinct.xyz/request'
+
+// COPY: live Succinct request status
+const REQUEST_STATUS_LABEL: Readonly<Record<ProofRequestProgress['fulfillmentStatus'], string>> = {
+  requested: 'Waiting for a prover to pick it up',
+  assigned: 'A prover is working on it',
+  fulfilled: 'Proof ready',
+  unfulfillable: 'No prover could fulfill it',
+}
+
+/** Live status of the running Succinct proof request, with a link to watch it on their explorer. */
+export function ProveProgress({ flow }: { flow: ProveFlow }) {
+  const request = flow.request
+  if (!flow.pending || !request) return null
+  return (
+    <p className="hint">
+      {REQUEST_STATUS_LABEL[request.fulfillmentStatus]}.{' '}
+      <ExtLink href={`${PROVE_REQUEST_URL}/${request.requestId}`}>Watch on Succinct</ExtLink>
+    </p>
+  )
+}
 
 /** Where the connected wallet manages its Succinct network PROVE balance. */
 const PROVE_ACCOUNT_URL = 'https://explorer.succinct.xyz/account'
@@ -32,6 +56,8 @@ export interface ProveFlow {
   /** The kids the running (or last) prove batch was asked for. */
   proving: readonly KidId[]
   stage: ProveStage | null
+  /** The Succinct request while proving, with the network's own status for it. */
+  request: ProofRequestProgress | null
   failure: { error: BridgeError; ids: readonly KidId[] } | null
 }
 
@@ -50,24 +76,27 @@ export function useProveFlow(): ProveFlow {
   const toast = useToast()
   const [proving, setProving] = useState<readonly KidId[]>([])
   const [stage, setStage] = useState<ProveStage | null>(null)
+  const [request, setRequest] = useState<ProofRequestProgress | null>(null)
   const [failure, setFailure] = useState<ProveFlow['failure']>(null)
 
   const run = async (ids: readonly KidId[], expectedRecipients?: ReadonlyMap<KidId, EthAddress>) => {
     if (!proveKid || ids.length === 0) return
     setProving(ids)
     setStage(null)
+    setRequest(null)
     setFailure(null)
     try {
-      const result = await proveKid.proveKids(ids, { expectedRecipients, onStage: setStage })
+      const result = await proveKid.proveKids(ids, { expectedRecipients, onStage: setStage, onProgress: setRequest })
       toast(provenToast(result.proved))
     } catch (e) {
       setFailure({ error: e as BridgeError, ids })
     } finally {
       setProving([])
       setStage(null)
+      setRequest(null)
     }
   }
-  return { run, pending: proving.length > 0, proving, stage, failure }
+  return { run, pending: proving.length > 0, proving, stage, request, failure }
 }
 
 /**

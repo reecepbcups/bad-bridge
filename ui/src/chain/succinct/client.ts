@@ -5,7 +5,7 @@
 // field number, enum value and default here was read directly off sp1-sdk 6.1.0's source in
 // ~/.cargo/registry (network/{client,prover,utils}.rs and network/proto/**), not guessed.
 
-import { hexToBytes, type Account, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
+import { bytesToHex, hexToBytes, type Account, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
 import { BridgeError } from '../types'
 import { GrpcError, grpcWebCall } from './grpcweb'
 import { decodeGroth16ProofFromNetwork, type DecodedGroth16Proof } from './proof'
@@ -53,6 +53,19 @@ function sleep(ms: number): Promise<void> {
 
 export type SuccinctStage = 'uploading-stdin' | 'requesting-proof' | 'proving'
 
+/** The network's own status for a submitted request, from each GetProofRequestStatus poll. */
+export interface ProofRequestProgress {
+  requestId: Hex
+  fulfillmentStatus: 'requested' | 'assigned' | 'fulfilled' | 'unfulfillable'
+}
+
+const FULFILLMENT_STATUS_NAMES: Readonly<Record<number, ProofRequestProgress['fulfillmentStatus']>> = {
+  1: 'requested',
+  2: 'assigned',
+  3: 'fulfilled',
+  4: 'unfulfillable',
+}
+
 export interface RequestGroth16ProofOptions {
   wallet: SignerClient
   /** BadBridge's on-chain MEMBERSHIP_PROGRAM_VKEY. */
@@ -60,6 +73,8 @@ export interface RequestGroth16ProofOptions {
   /** bincode-encoded SP1Stdin (hub/stdin.ts's encodeSp1Stdin output), not yet zstd-compressed. */
   stdinBytes: Uint8Array
   onStage?: (stage: SuccinctStage) => void
+  /** Called with the request id as soon as it's submitted, then on every status poll. */
+  onProgress?: (progress: ProofRequestProgress) => void
   /** How often to poll GetProofRequestStatus while proving. Default 5s. */
   pollMs?: number
   fetchImpl?: typeof fetch
@@ -306,9 +321,13 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
   const requestId = await requestProofWithNonceRetry(opts.wallet, buildBody, nonce, fetchImpl)
 
   opts.onStage?.('proving')
+  const requestIdHex = bytesToHex(requestId)
+  opts.onProgress?.({ requestId: requestIdHex, fulfillmentStatus: 'requested' })
   const pollMs = opts.pollMs ?? 5000
   for (;;) {
     const status = await getProofRequestStatus(requestId, fetchImpl)
+    const name = FULFILLMENT_STATUS_NAMES[status.fulfillmentStatus]
+    if (name) opts.onProgress?.({ requestId: requestIdHex, fulfillmentStatus: name })
     if (status.fulfillmentStatus === FULFILLMENT_STATUS_FULFILLED) {
       if (!status.proofUri) throw new BridgeError('Unknown', 'proof fulfilled but no proof_uri in the status response')
       return decodeGroth16ProofFromNetwork(await downloadArtifact(status.proofUri, fetchImpl))
