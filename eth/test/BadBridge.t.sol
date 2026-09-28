@@ -477,6 +477,13 @@ contract BadBridgeOwnerTest is BadBridgeBase {
         assertEq(bridge.contractURI(), "ipfs://d");
     }
 
+    function test_setRoyaltyEmits() public {
+        vm.expectEmit(address(bridge));
+        emit BadBridge.RoyaltyUpdated(ROYALTY, 500);
+        vm.prank(OWNER);
+        bridge.setRoyalty(ROYALTY, 500);
+    }
+
     function test_supportsInterface() public view {
         assertTrue(bridge.supportsInterface(0x01ffc9a7)); // ERC-165
         assertTrue(bridge.supportsInterface(0x80ac58cd)); // ERC-721

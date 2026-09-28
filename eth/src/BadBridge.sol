@@ -86,6 +86,7 @@ contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
     event Proven(uint32 indexed tokenId, address indexed recipient);
     /// @notice ERC-7572
     event ContractURIUpdated();
+    event RoyaltyUpdated(address indexed receiver, uint96 bps);
 
     error ClientFrozen();
     error BadConsensusState();
@@ -122,6 +123,7 @@ contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
     /// @notice Royalty for every kid, capped at MAX_ROYALTY_BPS. Marketplaces may ignore it.
     function setRoyalty(address receiver, uint96 bps) external onlyOwner {
         _setRoyalty(receiver, bps);
+        emit RoyaltyUpdated(receiver, bps);
     }
 
     function setContractURI(string calldata uri) external onlyOwner {
