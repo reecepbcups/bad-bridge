@@ -1,0 +1,47 @@
+/* About page styles, ported from the mockup. */
+.about { display: grid; gap: 18px; }
+.about h3 { font: 700 26px/1 var(--display); margin: 8px 0 0; }
+.how { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.how li { display: grid; gap: 6px; align-content: start; font-size: 14.5px; }
+.how .n { width: 34px; height: 34px; display: grid; place-items: center; font: 700 20px/1 var(--display); background: var(--sun); color: var(--sun-ink); border: 2px solid var(--ink); border-radius: var(--wobble); }
+.how b { font: 700 21px/1.05 var(--display); }
+.how .where { font: 700 12px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; }
+.how .where.hub { color: var(--hub-ink); }
+.how .where.mid { color: var(--ink-soft); }
+.how .where.eth { color: var(--eth-ink); }
+.trust { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.trust li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 15px; }
+.trust li::before { content: "✓"; font: 700 22px/1 var(--display); color: var(--ok); }
+.trust b { font-weight: 800; }
+/* a caveat about this deployment (someone could change something), and a fact we couldn't read */
+.trust li.caveat::before { content: "!"; color: var(--crayon-ink); }
+.trust li.unknown::before { content: "?"; color: var(--ink-soft); }
+.trust li.unknown { color: var(--ink-soft); }
+.trust .mono { font-size: 13px; }
+.trust-note { font-size: 13px; margin: -4px 0 0; }
+.faq { display: grid; }
+.faq details { border-top: 2px dashed var(--line); padding-block: 10px; }
+.faq summary { cursor: pointer; font: 700 20px/1.2 var(--display); }
+.faq p { margin: 6px 0 2px; font-size: 15px; color: var(--ink-soft); max-width: 62ch; }
+.addrs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; font-size: 14px; }
+.addrs dt { font-weight: 800; }
+.addrs dd { margin: 0; overflow-wrap: anywhere; }
+.contracts-check { font-size: 14px; margin: 12px 0 0; }
+.contracts-check.ok { color: var(--ok-ink); font-weight: 700; }
+.contracts-check.bad { color: var(--crayon-ink); font-weight: 700; }
+
+@media (max-width: 520px) {
+  .how { grid-template-columns: 1fr; }
+  .addrs { grid-template-columns: 1fr; gap: 2px; }
+  .addrs dd { margin-bottom: 8px; }
+}
+
+/* live health strip */
+.health {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0;
+  border: 2px dashed var(--line); border-radius: var(--wobble-2); padding: 10px 14px; font-size: 14px;
+}
+.health b { font-weight: 800; }
+.health .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); }
+.health .dot.ok { background: var(--ok); }
+.health .dot.bad { background: var(--crayon); }

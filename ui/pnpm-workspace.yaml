@@ -1,0 +1,22 @@
+# Single-package workspace; this file only holds pnpm settings.
+overrides:
+  # cosmwasm-stargate is now a re-export shim of @cosmjs/cosmwasm pinned to ^0.38. Point it at
+  # 0.39 so graz and our code share one copy of @cosmjs/stargate.
+  "@cosmjs/cosmwasm-stargate>@cosmjs/cosmwasm": 0.39.0
+  # @scure/base >=2.3 rejects the `limit = Infinity` default that cosmjs' fromBech32 passes, so every
+  # fromBech32(addr) call throws "limit: expected safe integer". 2.2.0 is the last version that works.
+  "@cosmjs/encoding>@scure/base": 2.2.0
+  # ws before 8.21 (GHSA-58qx-3vcg-4xpx, GHSA-96hv-2xvq-fx4p), pulled in by @walletconnect/utils' own viem. Same
+  # major, so nothing changes shape. The browser build only ever bundles ws' stub; this is for Node-side tooling.
+  "ws@>=8.0.0 <8.21.0": 8.22.0
+  # uuid before 11.1.1 (GHSA-w5hq-g745-h8pq), from @metamask/sdk, @metamask/utils and graz's cosmiframe. They only
+  # import named functions from bare 'uuid', which 11.x still exports, with CommonJS builds for the require() callers.
+  # decode-uri-component (GHSA-vcc3-ghjq-m6fr) is left alone: the fix (0.5.0) is ESM-only with a default export, and
+  # WalletConnect's query-string@7 require()s it and calls it as a function, which would break at runtime.
+  "uuid@<11.1.1": 11.1.1
+# Native Node addons and a version-check postinstall. The browser build uses JS fallbacks.
+ignoredBuiltDependencies:
+  - bufferutil
+  - keccak
+  - protobufjs
+  - utf-8-validate

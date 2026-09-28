@@ -1,0 +1,659 @@
+<title>Bad Bridge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Nunito:wght@500;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --paper: #FFFEF9;
+    --ink: #26221E;
+    --ink-soft: #6E665B;
+    --line: #DCD5C8;
+    --hub: #7A5AF8;
+    --hub-tint: #ECE6FF;
+    --eth: #2D7FF9;
+    --eth-tint: #E1EDFF;
+    --crayon: #F0502E;
+    --sun: #FFD84D;
+    --sun-ink: #26221E;
+    --ok: #2FA35A;
+    --display: "Gaegu", "Comic Sans MS", "Chalkboard SE", cursive;
+    --body: "Nunito", ui-rounded, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    --wobble: 255px 14px 225px 14px / 14px 225px 14px 255px;
+    --wobble-2: 14px 225px 14px 255px / 255px 14px 225px 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #1D2420; --ink: #F1EEE4; --ink-soft: #A7AFA6; --line: #3A4540;
+      --hub: #B7A3FF; --hub-tint: #2C2A44; --eth: #82B4FF; --eth-tint: #1F3048;
+      --crayon: #FF7C5E; --sun: #FFE070; --ok: #6BD68E;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #1D2420; --ink: #F1EEE4; --ink-soft: #A7AFA6; --line: #3A4540;
+    --hub: #B7A3FF; --hub-tint: #2C2A44; --eth: #82B4FF; --eth-tint: #1F3048;
+    --crayon: #FF7C5E; --sun: #FFE070; --ok: #6BD68E;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font: 500 16px/1.5 var(--body);
+    padding: 0 16px;
+    padding-block: 20px 56px;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; display: grid; gap: 22px; }
+
+  /* mockup-only toolbar */
+  .mock {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+    font: 500 12px/1 var(--mono); color: var(--ink-soft);
+    border: 1.5px dashed var(--line); border-radius: 10px; padding: 8px 10px;
+  }
+  .mock button {
+    font: inherit; color: var(--ink-soft); background: none; cursor: pointer;
+    border: 1.5px solid var(--line); border-radius: 99px; padding: 5px 10px;
+  }
+  .mock button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .logo { font: 700 44px/0.9 var(--display); letter-spacing: -0.5px; margin: 0; }
+  .logo .bad { color: var(--crayon); }
+  .logo svg { display: block; width: 180px; height: 16px; margin-top: 2px; }
+  .wallets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font: 500 12.5px/1 var(--mono); padding: 7px 11px;
+    border: 2px solid var(--ink); border-radius: var(--wobble-2);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  /* stepper */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; list-style: none; margin: 0; padding: 0; }
+  .steps li { display: flex; align-items: center; gap: 8px; font: 700 20px/1.1 var(--display); color: var(--ink-soft); }
+  .steps .n {
+    flex: none; width: 34px; height: 34px; display: grid; place-items: center;
+    border: 2px solid currentColor; border-radius: var(--wobble); font-size: 20px;
+  }
+  .steps li.now { color: var(--ink); }
+  .steps li.now .n { background: var(--sun); color: var(--sun-ink); border-color: var(--ink); }
+  .steps li.past { color: var(--ok); }
+  .steps small { display: block; font: 600 12px/1.2 var(--body); color: var(--ink-soft); }
+
+  /* the one big sketched card */
+  .card {
+    border: 2.5px solid var(--ink); border-radius: var(--wobble);
+    padding: 26px 24px; display: grid; gap: 18px;
+    box-shadow: 4px 5px 0 var(--ink);
+    background: var(--paper);
+  }
+  h2 { font: 700 34px/1 var(--display); margin: 0; text-wrap: balance; }
+  .lede { margin: -8px 0 0; color: var(--ink-soft); max-width: 58ch; }
+  .hl { background: linear-gradient(transparent 55%, var(--sun) 55%, var(--sun) 88%, transparent 88%); color: var(--sun-ink); padding: 0 2px; }
+
+  /* kid grid */
+  .kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; }
+  .kid {
+    position: relative; cursor: pointer; text-align: center; color: var(--ink);
+    border: 2px solid var(--line); border-radius: var(--wobble-2);
+    padding: 10px 8px 8px; background: none; font: inherit;
+    transition: transform .12s, border-color .12s;
+  }
+  .kid:hover:not(:disabled) { transform: rotate(-1.5deg); border-color: var(--ink); }
+  .kid svg { width: 76px; height: 76px; display: block; margin: 0 auto; }
+  .kid .name { font: 700 19px/1 var(--display); display: block; margin-top: 4px; }
+  .kid .sub { font: 600 11.5px/1.3 var(--body); color: var(--ink-soft); display: block; }
+  .kid[aria-pressed="true"] { border-color: var(--ink); border-width: 2.5px; background: var(--hub-tint); transform: rotate(1deg); }
+  .kid[aria-pressed="true"]::after {
+    content: "✓"; position: absolute; top: -10px; right: -8px;
+    width: 28px; height: 28px; display: grid; place-items: center;
+    font: 700 20px/1 var(--display); background: var(--sun); color: var(--sun-ink);
+    border: 2px solid var(--ink); border-radius: var(--wobble);
+  }
+  .kid:disabled { cursor: default; opacity: .5; }
+
+  .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .muted { color: var(--ink-soft); font-size: 14px; }
+
+  .btn {
+    font: 700 22px/1 var(--display); cursor: pointer; color: var(--sun-ink);
+    background: var(--sun); border: 2.5px solid var(--ink); border-radius: var(--wobble);
+    padding: 11px 22px 12px; box-shadow: 3px 3px 0 var(--ink);
+    transition: transform .08s, box-shadow .08s;
+  }
+  .btn:hover:not(:disabled) { transform: translate(-1px,-1px) rotate(-.8deg); box-shadow: 4px 4px 0 var(--ink); }
+  .btn:active:not(:disabled) { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.ghost { background: none; color: var(--ink); box-shadow: none; font-size: 19px; }
+  .btn.eth { background: var(--eth); color: #fff; }
+  :focus-visible { outline: 3px dashed var(--crayon); outline-offset: 3px; }
+
+  /* review form */
+  .picked { display: flex; flex-wrap: wrap; gap: 10px; }
+  .picked .mini { display: flex; align-items: center; gap: 6px; font: 700 18px/1 var(--display); }
+  .picked svg { width: 40px; height: 40px; }
+  label.field { display: grid; gap: 6px; font: 700 20px/1 var(--display); }
+  input[type="text"] {
+    font: 500 15px/1 var(--mono); color: var(--ink); background: var(--paper);
+    border: 2.5px solid var(--ink); border-radius: var(--wobble-2);
+    padding: 12px 14px; width: 100%;
+  }
+  .hint { font: 600 13px/1.4 var(--body); color: var(--ink-soft); }
+  .hint.bad { color: var(--crayon); }
+  .warn {
+    display: flex; gap: 12px; align-items: flex-start;
+    border: 2px dashed var(--crayon); border-radius: var(--wobble-2); padding: 12px 14px;
+  }
+  .warn svg { flex: none; width: 34px; height: 34px; color: var(--crayon); }
+  .warn b { font: 700 20px/1 var(--display); display: block; margin-bottom: 2px; }
+  .check { display: flex; gap: 10px; align-items: center; font-weight: 700; cursor: pointer; }
+  .check input { width: 20px; height: 20px; accent-color: var(--crayon); }
+
+  /* crossing scene */
+  .scene { width: 100%; height: auto; display: block; color: var(--ink); overflow: visible; }
+  .scene text { font: 700 19px var(--display); fill: var(--ink); }
+  .bob { animation: bob .5s ease-in-out infinite alternate; }
+  @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+  .stages { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .stages li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; color: var(--ink-soft); }
+  .stages .tick {
+    width: 26px; height: 26px; display: grid; place-items: center; font: 700 18px/1 var(--display);
+    border: 2px solid currentColor; border-radius: var(--wobble);
+  }
+  .stages b { font: 700 20px/1.05 var(--display); display: block; }
+  .stages span.d { font-size: 13.5px; }
+  .stages li.done { color: var(--ok); }
+  .stages li.done b { color: var(--ink); }
+  .stages li.now { color: var(--ink); }
+  .stages li.now .tick { background: var(--sun); color: var(--sun-ink); animation: wiggle .7s ease-in-out infinite alternate; }
+  @keyframes wiggle { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  a { color: var(--eth); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+  .celebrate { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
+  .celebrate svg { width: 96px; height: 96px; }
+  .stamp {
+    display: inline-block; font: 700 16px/1 var(--display); color: var(--eth);
+    border: 2px solid var(--eth); border-radius: var(--wobble); padding: 4px 8px; transform: rotate(-4deg);
+  }
+
+  footer { font-size: 13.5px; color: var(--ink-soft); display: grid; gap: 4px; }
+  footer b { color: var(--ink); }
+
+
+  /* real kid art */
+  .art { display: block; object-fit: cover; background: var(--line); border: 2px solid var(--ink); border-radius: var(--wobble-2); }
+  .kid .art { width: 96px; height: 96px; margin: 0 auto; }
+  .picked .art { width: 44px; height: 44px; }
+  .celebrate .art { width: 110px; height: 110px; }
+  .celebrate .art:nth-child(odd) { transform: rotate(-4deg); }
+  .celebrate .art:nth-child(even) { transform: rotate(3deg); }
+  .celebrate { gap: 12px; }
+
+  /* top tabs */
+  .tabs { display: flex; gap: 6px; border-bottom: 2.5px solid var(--ink); }
+  .tab {
+    font: 700 22px/1 var(--display); color: var(--ink-soft); background: none; cursor: pointer;
+    border: 2.5px solid transparent; border-bottom: 0; border-radius: 14px 14px 0 0;
+    padding: 9px 16px 8px; margin-bottom: -2.5px; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .tab[aria-selected="true"] { color: var(--ink); border-color: var(--ink); background: var(--paper); border-radius: var(--wobble-2); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .badge { font: 700 13px/1 var(--body); background: var(--sun); color: var(--sun-ink); border: 2px solid var(--ink); border-radius: 99px; padding: 3px 7px; }
+
+  /* tracker */
+  .lookup { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .lookup input { flex: 1 1 260px; }
+  .lookup .btn { font-size: 19px; padding: 9px 16px 10px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    font: 700 16px/1 var(--display); padding: 4px 10px 5px;
+    border: 2px solid var(--ink); border-radius: var(--wobble);
+  }
+  .pill.crossing { background: var(--sun); color: var(--sun-ink); }
+  .pill.ready { background: var(--eth); color: #fff; }
+  :root[data-theme="dark"] .pill.ready { color: #10233F; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.ready { color: #10233F; } }
+  .pill.home { color: var(--ok); border-color: var(--ok); }
+  .list { list-style: none; margin: 0; padding: 0; display: grid; }
+  .item { display: grid; grid-template-columns: 72px 1fr auto; gap: 6px 14px; align-items: center; padding-block: 14px; border-top: 2px dashed var(--line); }
+  .item:first-child { border-top: 0; }
+  .item .art { width: 72px; height: 72px; grid-row: span 2; }
+  .item .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .item .id { font: 700 24px/1 var(--display); }
+  .item .meta { font-size: 13px; color: var(--ink-soft); }
+  .item .act { grid-row: span 2; }
+  .item .act .btn { font-size: 19px; padding: 8px 16px 9px; }
+  .item details { grid-column: 2 / -1; }
+  .item summary { cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--ink-soft); width: max-content; }
+  .item details .stages { margin-top: 10px; }
+  .track { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; max-width: 320px; }
+  .track span { height: 7px; border: 1.5px solid var(--ink); border-radius: 99px 30px 99px 30px; }
+  .track span.on { background: var(--ok); }
+  .track span.cur { background: repeating-linear-gradient(-45deg, var(--sun) 0 5px, transparent 5px 9px); }
+  .track-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; max-width: 320px; font: 700 11px/1.2 var(--body); color: var(--ink-soft); }
+  .note { font-size: 13.5px; color: var(--ink-soft); border-left: 3px solid var(--sun); padding-left: 10px; }
+  @media (max-width: 520px) {
+    .item { grid-template-columns: 56px 1fr; }
+    .item .art { width: 56px; height: 56px; }
+    .item .act { grid-row: auto; grid-column: 2; }
+    .tab { font-size: 19px; padding-inline: 11px; }
+  }
+
+  @media (max-width: 520px) {
+    .logo { font-size: 38px; }
+    .steps li { flex-direction: column; align-items: flex-start; font-size: 17px; }
+    .card { padding: 20px 16px; }
+    h2 { font-size: 29px; }
+  }
+
+  /* about */
+  .about h3 { font: 700 26px/1 var(--display); margin: 8px 0 0; }
+  .how { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .how li { display: grid; gap: 6px; align-content: start; font-size: 14.5px; }
+  .how .n { width: 34px; height: 34px; display: grid; place-items: center; font: 700 20px/1 var(--display); background: var(--sun); color: var(--sun-ink); border: 2px solid var(--ink); border-radius: var(--wobble); }
+  .how b { font: 700 21px/1.05 var(--display); }
+  .how .where { font: 700 12px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; }
+  .trust { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .trust li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 15px; }
+  .trust li::before { content: "✓"; font: 700 22px/1 var(--display); color: var(--ok); }
+  .trust b { font-weight: 800; }
+  .faq { display: grid; }
+  .faq details { border-top: 2px dashed var(--line); padding-block: 10px; }
+  .faq summary { cursor: pointer; font: 700 20px/1.2 var(--display); }
+  .faq p { margin: 6px 0 2px; font-size: 15px; color: var(--ink-soft); max-width: 62ch; }
+  .addrs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; font-size: 14px; }
+  .addrs dt { font-weight: 800; }
+  .addrs dd { margin: 0; overflow-wrap: anywhere; }
+  @media (max-width: 520px) {
+    .how { grid-template-columns: 1fr; }
+    .addrs { grid-template-columns: 1fr; gap: 2px; }
+    .addrs dd { margin-bottom: 8px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bob, .stages li.now .tick { animation: none; }
+    .kid, .btn { transition: none; }
+  }
+</style>
+
+<div class="wrap">
+  <nav class="mock" aria-label="Mockup states">
+    <span>mockup · jump to</span>
+    <button type="button" data-go="pick">pick</button>
+    <button type="button" data-go="review">send</button>
+    <button type="button" data-go="crossing">crossing</button>
+    <button type="button" data-go="claim">claim</button>
+    <button type="button" data-go="done">done</button>
+    <button type="button" data-go="tracker">my kids</button>
+    <button type="button" data-go="about">about</button>
+  </nav>
+
+  <header>
+    <div>
+      <h1 class="logo"><span class="bad">bad</span> bridge</h1>
+      <svg viewBox="0 0 180 16" aria-hidden="true"><path d="M3 12 Q45 2 90 9 T177 6" fill="none" stroke="var(--crayon)" stroke-width="3.5" stroke-linecap="round"/></svg>
+    </div>
+    <div class="wallets">
+      <span class="chip"><span class="dot" style="background:var(--hub)"></span>cosmos1q8m…3fxl</span>
+      <span class="chip"><span class="dot" style="background:var(--eth)"></span>0x8f3a…c21d</span>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab" role="tab" id="tabBridge" data-tab="bridge">Bridge a kid</button>
+    <button type="button" class="tab" role="tab" id="tabMine" data-tab="tracker">My kids <span class="badge" id="moving"></span></button>
+    <button type="button" class="tab" role="tab" id="tabAbout" data-tab="about">About</button>
+  </div>
+
+  <ol class="steps" id="steps">
+    <li data-s="0"><span class="n">1</span><span>Send<small>from Cosmos Hub</small></span></li>
+    <li data-s="1"><span class="n">2</span><span>Cross<small>we prove it</small></span></li>
+    <li data-s="2"><span class="n">3</span><span>Claim<small>on Ethereum</small></span></li>
+  </ol>
+
+  <main class="card" id="card" aria-live="polite"></main>
+
+  <footer>
+    <span><b>One way only:</b> Cosmos Hub → Ethereum. There's no bridge back.</span>
+    <span>Same token IDs, same art. Metadata stays on IPFS; only the kid moves.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // ---------- art ----------
+  const art = (id, cls = "art") => `<img class="${cls}" src="kids/${id}.jpg" alt="Bad Kid #${id}" width="96" height="96">`;
+  function rng(seed) { let s = (seed * 9301 + 49297) % 2147483647 || 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+  function blob(cx, cy, r, rand) {
+    const n = 12, p = [];
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2, rr = r + (rand() - .5) * r * .16; p.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]); }
+    const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    let m = mid(p[0], p[1]), d = `M${m[0].toFixed(1)},${m[1].toFixed(1)}`;
+    for (let i = 1; i <= n; i++) { const c = p[i % n], nx = mid(c, p[(i + 1) % n]); d += ` Q${c[0].toFixed(1)},${c[1].toFixed(1)} ${nx[0].toFixed(1)},${nx[1].toFixed(1)}`; }
+    return d + "Z";
+  }
+
+  // ---------- data (example wallet) ----------
+  const KIDS = [
+    { id: 9176 }, { id: 6413 }, { id: 4801 }, { id: 663 }, { id: 3838 },
+    { id: 8073, crossed: "crossed Sep 23" }
+  ];
+  const ETH_DEFAULT = "0x8f3a41b7e2d09c6a5e1f7b3c2d9a0e4f6b8cc21d";
+  // Earlier trips that the tracker finds for this address. prog: 0..1 across the crossing, then "ready" / "home".
+  const TRIPS = [
+    { id: 9254, status: "ready", sent: "Sep 26, 9:12 pm", note: "Proven 2 hours ago" },
+    { id: 8783, status: "crossing", prog: .62, sent: "22 min ago" },
+    { id: 8073, status: "home", sent: "Sep 23", note: "Claimed Sep 23 · tx 0xc3fa…cf8c" }
+  ];
+
+  const state = { tab: "bridge", view: "pick", sel: new Set([9176, 6413]), to: ETH_DEFAULT, ok: false, prog: 0, raf: 0, sending: false, sent: [], lookup: "0x8f3a…c21d" };
+  const card = document.getElementById("card");
+  const $ = (q) => card.querySelector(q);
+  const sel = () => KIDS.filter(k => state.sel.has(k.id));
+  const n = () => state.sel.size;
+  const kidWord = (c) => c === 1 ? "kid" : "kids";
+
+  const STAGES = [
+    { at: 0,   t: "Locked in the Hub escrow", d: () => `send_nft confirmed · <a class="mono" href="https://www.mintscan.io/cosmos" target="_blank" rel="noopener">0C72F7…E2F5 ↗</a>` },
+    { at: .12, t: "Ethereum catches up to the Hub", d: () => `Ethereum's view of the Hub moves forward whenever Eureka relays a transfer.` },
+    { at: .5,  t: "Making the proof", d: () => `The batcher proves the kid left the Hub. Nobody has to trust it.` },
+    { at: .85, t: "Proof lands on Ethereum", d: () => `Checked on-chain against the Hub's state. Then it can be claimed.` }
+  ];
+  const stageIdx = (p) => STAGES.reduce((a, s, i) => (p >= s.at ? i : a), 0);
+  const stagesHTML = (p) => STAGES.map((s, i) => {
+    const cur = stageIdx(p), cls = p >= 1 || i < cur ? "done" : i === cur ? "now" : "";
+    return `<li class="${cls}"><span class="tick">${cls === "done" ? "✓" : i + 1}</span><span><b>${s.t}</b><span class="d">${s.d()}</span></span></li>`;
+  }).join("");
+
+  // every trip the tracker shows: kids sent this session first, then earlier ones
+  const trips = () => [
+    ...state.sent.map(id => ({ id, status: state.prog >= 1 && state.view !== "crossing" ? "ready" : "crossing", prog: state.prog, sent: "just now", mine: true })),
+    ...TRIPS.filter(t => !state.sent.includes(t.id))
+  ];
+
+  // ---------- views ----------
+  const views = {
+    pick() {
+      return `
+        <h2>Who's crossing?</h2>
+        <p class="lede">These Bad Kids live in your Hub wallet. Pick the ones moving to Ethereum.</p>
+        <div class="kids">
+          ${KIDS.map(k => `
+            <button type="button" class="kid" data-id="${k.id}" aria-pressed="${state.sel.has(k.id)}" ${k.crossed ? "disabled" : ""}>
+              ${art(k.id)}<span class="name">#${k.id}</span>
+              <span class="sub">${k.crossed ? k.crossed : "on the Hub"}</span>
+            </button>`).join("")}
+        </div>
+        <div class="row">
+          <span class="muted">${n() ? `${n()} ${kidWord(n())} picked` : "Pick at least one kid"}</span>
+          <button type="button" class="btn" id="next" ${n() ? "" : "disabled"}>Next →</button>
+        </div>`;
+    },
+    review() {
+      return `
+        <h2>Where do they land?</h2>
+        <div class="picked">${sel().map(k => `<span class="mini">${art(k.id)}#${k.id}</span>`).join("")}</div>
+        <label class="field" for="to">Ethereum address
+          <input type="text" id="to" value="${state.to}" spellcheck="false" autocomplete="off">
+        </label>
+        <p class="hint" id="toHint">Filled in from MetaMask. The kids get minted to this address.</p>
+        <div class="warn">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 L37 35 L3 35 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M20 15 L20 24 M20 29 L20 30" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>
+          <div><b>No take-backs.</b>This bridge only goes one way. Once a kid leaves the Hub, it lives on Ethereum for good.</div>
+        </div>
+        <label class="check" for="agree"><input type="checkbox" id="agree" ${state.ok ? "checked" : ""}> Got it, one way only</label>
+        <div class="row">
+          <button type="button" class="btn ghost" id="back">← Back</button>
+          <button type="button" class="btn" id="send">${state.sending ? "Check Keplr…" : `Send ${n()} ${kidWord(n())}`}</button>
+        </div>
+        <p class="hint">Keplr asks you to sign once per kid (${n()} ${n() === 1 ? "signature" : "signatures"}).</p>`;
+    },
+    crossing() {
+      return `
+        <h2>Crossing the bridge…</h2>
+        <p class="lede">This usually takes <span class="hl">20–60 minutes</span>. Close this tab if you like. Your ${kidWord(n())} will be waiting under <a href="#" data-tab="tracker">My kids</a>.</p>
+        ${scene()}
+        <ol class="stages" id="stages"></ol>
+        <div class="row">
+          <span class="muted mono" id="blocks"></span>
+          <button type="button" class="btn ghost" id="skip">Skip ahead (mockup)</button>
+        </div>`;
+    },
+    claim() {
+      return `
+        <div class="celebrate">${sel().map(k => art(k.id)).join("")}</div>
+        <h2 style="text-align:center">They made it across!</h2>
+        <p class="lede" style="text-align:center;margin-inline:auto">The proof landed on Ethereum. Claim to mint ${n() === 1 ? "your kid" : `all ${n()} kids`} to <span class="mono">0x8f3a…c21d</span>.</p>
+        <div class="row" style="justify-content:center"><button type="button" class="btn eth" id="claimBtn">Claim ${n()} ${kidWord(n())}</button></div>
+        <p class="hint" style="text-align:center">One Ethereum transaction per kid. Anyone can claim for you, and it still goes to your address.</p>`;
+    },
+    done() {
+      return `
+        <div class="celebrate">${sel().map(k => art(k.id)).join("")}</div>
+        <h2 style="text-align:center">Welcome to Ethereum, ${sel().map(k => "#" + k.id).join(" & ")}</h2>
+        <p style="text-align:center;margin:0"><span class="stamp">minted on Ethereum</span></p>
+        <p class="lede" style="text-align:center;margin-inline:auto">Same IDs, same art. They'll show up in your wallet and on marketplaces in a minute or two.</p>
+        <div class="row" style="justify-content:center">
+          <a class="btn ghost" href="https://etherscan.io/" target="_blank" rel="noopener" style="text-decoration:none">View on Etherscan ↗</a>
+          <button type="button" class="btn" id="again">Bridge another</button>
+        </div>`;
+    },
+    about() {
+      return `
+        <div class="about" style="display:grid;gap:18px">
+          <h2>What's the Bad Bridge?</h2>
+          <p class="lede">A one-way bridge that moves Bad Kids from the Cosmos Hub to Ethereum. Same kid, same number, same art, new home.</p>
+          <div class="celebrate">${[4801, 663, 3838].map(id => art(id)).join("")}</div>
+
+          <h3>How it works</h3>
+          <ol class="how">
+            <li><span class="n">1</span><span class="where" style="color:var(--hub)">Cosmos Hub</span><b>You send your kid</b>It goes into an escrow on the Hub, along with the Ethereum address it should land at.</li>
+            <li><span class="n">2</span><span class="where" style="color:var(--ink-soft)">In between</span><b>We prove it left</b>A zero-knowledge proof shows Ethereum that the kid really is locked on the Hub.</li>
+            <li><span class="n">3</span><span class="where" style="color:var(--eth)">Ethereum</span><b>You claim it</b>The same kid, with the same number, gets minted to your Ethereum address.</li>
+          </ol>
+
+          <h3>Why you can trust it</h3>
+          <ul class="trust">
+            <li><span><b>Nobody can mint a fake kid.</b> Every kid on Ethereum is backed by a proof of the Hub's real state, checked against the light client that IBC Eureka already runs on Ethereum.</span></li>
+            <li><span><b>No admin keys.</b> The escrow has no admin and the Ethereum contract has no owner. Nobody can pause it, upgrade it or pull kids out.</span></li>
+            <li><span><b>The prover can't lie.</b> The worst it can do is stop. If that happens, anyone can run another one from the open source code.</span></li>
+          </ul>
+
+          <h3>Good to know</h3>
+          <div class="faq">
+            <details><summary>Why can't kids come back?</summary><p>Going back would need the Hub to check proofs about Ethereum, and it can't do that today. Once a kid crosses, it stays on Ethereum.</p></details>
+            <details><summary>Why does it take a while?</summary><p>Ethereum only learns about new Hub blocks when IBC Eureka relays a transfer. After that, the prover bundles waiting kids into one proof. Usually that's 20 to 60 minutes.</p></details>
+            <details><summary>Does the art change?</summary><p>No. The Ethereum kid points at the same IPFS folder as the Hub kid, so the picture and traits are identical.</p></details>
+            <details><summary>What happens to the kid on the Hub?</summary><p>It stays locked in the escrow forever. That's what makes the Ethereum kid the real one.</p></details>
+            <details><summary>What does it cost?</summary><p>A normal Hub transaction to send, then about 79,000 gas on Ethereum to claim. The prover pays for the proof.</p></details>
+            <details><summary>I closed the tab. Where's my kid?</summary><p>Open <a href="#" data-tab="tracker">My kids</a> and look up your Ethereum address. It works from any device.</p></details>
+          </div>
+
+          <h3>Contracts</h3>
+          <dl class="addrs">
+            <dt>Escrow (Cosmos Hub)</dt><dd><a class="mono" href="https://www.mintscan.io/cosmos/wasm/contract/cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv" target="_blank" rel="noopener">cosmos1zr8k7ch8e9g7lqcgcd0peaklj43ymxvcusvqk7ver4zaqgdvragq8gumtv</a></dd>
+            <dt>BadBridge (Ethereum)</dt><dd><a class="mono" href="https://etherscan.io/address/0xde185d7902340086cc4c37322584e246dc5ee198" target="_blank" rel="noopener">0xde185d7902340086cc4c37322584e246dc5ee198</a></dd>
+            <dt>Hub light client</dt><dd><a class="mono" href="https://etherscan.io/address/0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9" target="_blank" rel="noopener">0x4bB8A05D5b40dF7a3B97770E1943461B681B62E9</a></dd>
+            <dt>Source</dt><dd><a href="https://github.com/reecepbcups/bad-bridge" target="_blank" rel="noopener">github.com/reecepbcups/bad-bridge</a></dd>
+          </dl>
+          <p class="note">These are the test deployment (ReeceBadTest). The real Bad Kids addresses go here at launch.</p>
+        </div>`;
+    },
+    tracker() {
+      const list = trips();
+      const count = (s) => list.filter(t => t.status === s).length;
+      const ready = count("ready");
+      const PILL = { crossing: "crossing", ready: "ready to claim", home: "home on Ethereum" };
+      const TRACK_AT = { crossing: null, ready: 3, home: 4 };
+      const row = (t) => {
+        const cur = t.status === "crossing" ? (stageIdx(t.prog) >= 2 ? 2 : 1) : TRACK_AT[t.status];
+        const segs = [0, 1, 2, 3].map(i => `<span class="${i < cur ? "on" : i === cur ? "cur" : ""}"></span>`).join("");
+        const stageName = t.status === "crossing" ? STAGES[stageIdx(t.prog)].t : t.note;
+        return `
+          <li class="item">
+            ${art(t.id)}
+            <div class="top"><span class="id">#${t.id}</span><span class="pill ${t.status}">${PILL[t.status]}</span></div>
+            <div class="act">${t.status === "ready" ? `<button type="button" class="btn eth" data-claim="${t.id}">Claim</button>`
+              : t.status === "home" ? `<a class="btn ghost" href="https://etherscan.io/" target="_blank" rel="noopener" style="text-decoration:none">View ↗</a>` : ""}</div>
+            <div>
+              <div class="track" aria-hidden="true">${segs}</div>
+              <div class="track-labels" aria-hidden="true"><span>Sent</span><span>Seen</span><span>Proven</span><span>Claimed</span></div>
+              <div class="meta">Sent ${t.sent} · ${stageName}</div>
+            </div>
+            ${t.status === "crossing" ? `<details><summary>What's happening?</summary><ol class="stages">${stagesHTML(t.prog)}</ol></details>` : ""}
+          </li>`;
+      };
+      return `
+        <h2>My kids</h2>
+        <p class="lede">Every kid headed to your Ethereum address, wherever it is on the bridge.</p>
+        <div class="lookup">
+          <label class="sr" for="lookup" style="position:absolute;left:-9999px">Ethereum or Hub address</label>
+          <input type="text" id="lookup" value="${state.lookup}" spellcheck="false" autocomplete="off" placeholder="0x… or cosmos1…">
+          <button type="button" class="btn ghost" id="find">Look up</button>
+        </div>
+        <div class="row">
+          <div class="summary">
+            ${count("crossing") ? `<span class="pill crossing">${count("crossing")} crossing</span>` : ""}
+            ${ready ? `<span class="pill ready">${ready} ready</span>` : ""}
+            ${count("home") ? `<span class="pill home">${count("home")} home</span>` : ""}
+          </div>
+          ${ready > 1 ? `<button type="button" class="btn eth" id="claimAll">Claim all ${ready}</button>` : ""}
+        </div>
+        <ul class="list">${list.map(row).join("")}</ul>
+        <p class="note">Found by your Ethereum address, so it works from any device. Checks again every 30 seconds.</p>`;
+    }
+  };
+
+  // ---------- crossing scene ----------
+  const deckY = (x) => { const t = (x - 135) / 370; return (1 - t) ** 2 * 122 + 2 * (1 - t) * t * 166 + t * t * 122; };
+  function scene() {
+    let planks = "";
+    for (let x = 150; x <= 490; x += 20) { const y = deckY(x); planks += `M${x},${(y - 7).toFixed(1)} L${x},${(y + 5).toFixed(1)} `; }
+    let hangers = "";
+    for (let x = 175; x <= 465; x += 40) { const t = (x - 135) / 370, ry = (1 - t) ** 2 * 84 + 2 * (1 - t) * t * 138 + t * t * 84; hangers += `M${x},${ry.toFixed(1)} L${x},${(deckY(x) - 6).toFixed(1)} `; }
+    const walkers = sel().slice(0, 3).map((k, i) => {
+      const d = blob(0, -26, 24, rng(k.id));
+      return `<g class="walker" data-i="${i}"><g class="bob" style="animation-delay:${i * .17}s">
+        <clipPath id="clip${k.id}"><path d="${d}"/></clipPath>
+        <image href="kids/${k.id}.jpg" x="-26" y="-52" width="52" height="52" clip-path="url(#clip${k.id})" preserveAspectRatio="xMidYMid slice"/>
+        <path d="${d}" fill="none" stroke="currentColor" stroke-width="2.5"/></g></g>`;
+    }).join("");
+    return `
+      <svg class="scene" viewBox="0 0 640 230" role="img" aria-label="Your kids walking across a bridge from Cosmos Hub to Ethereum">
+        <path d="M150,212 q15,-8 30,0 t30,0 t30,0 t30,0 t30,0 t30,0 t30,0 t30,0 t30,0 t30,0 t30,0" fill="none" stroke="var(--eth)" stroke-width="2.5" stroke-linecap="round" opacity=".55"/>
+        <path d="M0,230 L0,124 Q45,112 92,118 L138,121 L150,230 Z" fill="var(--hub-tint)" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M640,230 L640,124 Q595,112 548,118 L502,121 L490,230 Z" fill="var(--eth-tint)" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+        <text x="16" y="160" style="fill:var(--hub)">Cosmos Hub</text>
+        <text x="624" y="160" text-anchor="end" style="fill:var(--eth)">Ethereum</text>
+        <path d="M135,84 Q320,138 505,84" fill="none" stroke="currentColor" stroke-width="2.5"/>
+        <path d="${hangers}" stroke="currentColor" stroke-width="1.8" opacity=".7"/>
+        <path d="M135,122 Q320,166 505,122" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="${planks}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M135,76 L135,124 M505,76 L505,124" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        <g transform="translate(598,118)"><path d="M0,0 L0,-46" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M0,-46 L24,-39 L0,-31 Z" fill="var(--crayon)" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></g>
+        ${walkers}
+      </svg>`;
+  }
+  function paintCrossing() {
+    const p = state.prog;
+    card.querySelectorAll(".walker").forEach(w => {
+      const i = +w.dataset.i, x = 80 + p * 480 - i * 34;
+      const y = x < 135 || x > 505 ? 119 : deckY(x) - 3;
+      w.setAttribute("transform", `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+    });
+    $("#stages").innerHTML = stagesHTML(p);
+    const hub = 28114902, seen = Math.min(hub, 28114650 + Math.floor(p * 400));
+    $("#blocks").textContent = `Hub block ${hub.toLocaleString()} · Ethereum has seen ${seen.toLocaleString()}`;
+  }
+  function runCrossing() {
+    cancelAnimationFrame(state.raf);
+    const start = performance.now() - state.prog * 10000;
+    const tick = (now) => {
+      state.prog = Math.min(1, (now - start) / 10000);
+      if (state.view !== "crossing" || state.tab !== "bridge") return;
+      paintCrossing();
+      if (state.prog >= 1) { setTimeout(() => state.view === "crossing" && go("claim"), 900); return; }
+      state.raf = requestAnimationFrame(tick);
+    };
+    state.raf = requestAnimationFrame(tick);
+  }
+
+  // ---------- render + wiring ----------
+  const STEP_OF = { pick: 0, review: 0, crossing: 1, claim: 2, done: 3 };
+  function go(v) {
+    if (v === "tracker" || v === "about") { state.tab = v; return render(); }
+    state.tab = "bridge"; state.view = v; state.sending = false;
+    if (!n()) state.sel = new Set([9176, 6413]);
+    if (v === "crossing") { state.prog = 0; state.sent = [...state.sel]; }
+    if (v === "claim") { state.prog = 1; state.sent = [...state.sel]; }
+    if (v === "done") { state.prog = 1; state.sent = []; }
+    render();
+  }
+  function render() {
+    const tracking = state.tab !== "bridge", v = tracking ? state.tab : state.view;
+    card.innerHTML = views[v]();
+    document.getElementById("steps").hidden = tracking;
+    document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t.dataset.tab === state.tab));
+    const moving = trips().filter(t => t.status !== "home").length;
+    const badge = document.getElementById("moving"); badge.textContent = moving; badge.hidden = !moving;
+    document.querySelectorAll("#steps li").forEach(li => {
+      const s = +li.dataset.s, cur = STEP_OF[state.view];
+      li.className = s < cur ? "past" : s === cur ? "now" : "";
+      li.querySelector(".n").textContent = s < cur ? "✓" : s + 1;
+    });
+    document.querySelectorAll(".mock button").forEach(b => b.setAttribute("aria-pressed", b.dataset.go === v));
+    if (v === "crossing") { paintCrossing(); runCrossing(); }
+    if (v === "review") validate();
+  }
+  function validate() {
+    const val = state.to.trim(), hint = $("#toHint");
+    let msg = "Filled in from MetaMask. The kids get minted to this address.", bad = false;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(val)) { msg = "That doesn't look like an Ethereum address (0x + 40 characters)."; bad = true; }
+    else if (/^0x0{40}$/.test(val)) { msg = "That's the zero address. Kids sent there are gone forever."; bad = true; }
+    hint.textContent = msg; hint.classList.toggle("bad", bad);
+    $("#send").disabled = bad || !state.ok || state.sending;
+  }
+  function claimTrip(id, btn) {
+    btn.disabled = true; btn.textContent = "Check MetaMask…";
+    setTimeout(() => {
+      const t = TRIPS.find(t => t.id === id);
+      if (t) { t.status = "home"; t.note = "Claimed just now"; }
+      else if (state.sent.includes(id)) { state.sent = state.sent.filter(x => x !== id); TRIPS.unshift({ id, status: "home", sent: "today", note: "Claimed just now" }); }
+      render();
+    }, 1100);
+  }
+
+  document.addEventListener("click", (e) => {
+    const tabEl = e.target.closest("[data-tab]");
+    if (tabEl) { e.preventDefault(); state.tab = tabEl.dataset.tab; window.scrollTo({ top: 0 }); return render(); }
+    const t = e.target.closest("button"); if (!t || !card.contains(t)) return;
+    if (t.classList.contains("kid")) {
+      const id = +t.dataset.id; state.sel.has(id) ? state.sel.delete(id) : state.sel.add(id); render();
+    } else if (t.id === "next") go("review");
+    else if (t.id === "back") go("pick");
+    else if (t.id === "send") { state.sending = true; render(); setTimeout(() => state.sending && go("crossing"), 1300); }
+    else if (t.id === "skip") { state.prog = 1; paintCrossing(); setTimeout(() => go("claim"), 500); }
+    else if (t.id === "claimBtn") { t.disabled = true; t.textContent = "Check MetaMask…"; setTimeout(() => { if (state.view === "claim") { state.sent.forEach(id => TRIPS.unshift({ id, status: "home", sent: "today", note: "Claimed just now" })); go("done"); } }, 1300); }
+    else if (t.id === "again") { state.sel = new Set(); state.ok = false; state.view = "pick"; render(); }
+    else if (t.dataset.claim) claimTrip(+t.dataset.claim, t);
+    else if (t.id === "claimAll") card.querySelectorAll("[data-claim]").forEach(b => claimTrip(+b.dataset.claim, b));
+    else if (t.id === "find") { t.textContent = "Looking…"; setTimeout(render, 700); }
+  });
+  card.addEventListener("input", (e) => {
+    if (e.target.id === "to") { state.to = e.target.value; validate(); }
+    if (e.target.id === "agree") { state.ok = e.target.checked; validate(); }
+    if (e.target.id === "lookup") state.lookup = e.target.value;
+  });
+  document.querySelector(".mock").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-go]"); if (!b) return;
+    if (b.dataset.go === "review" || b.dataset.go === "crossing") state.ok = true;
+    go(b.dataset.go);
+  });
+
+  render();
+})();
+</script>

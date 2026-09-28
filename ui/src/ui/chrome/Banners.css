@@ -1,0 +1,21 @@
+/* site-wide notices above the tabs */
+.banners { display: grid; gap: 10px; }
+.banner {
+  display: grid; gap: 2px; font-size: 14.5px;
+  border: 2.5px solid var(--ink); border-radius: var(--wobble-2); padding: 10px 14px 12px;
+}
+.banner b { font: 700 22px/1.1 var(--display); }
+.banner.paused { background: var(--sun); color: var(--sun-ink); box-shadow: 3px 3px 0 var(--ink); }
+.banner.bad { border: 2.5px dashed var(--crayon); }
+.banner.bad b { color: var(--crayon-ink); }
+.banner ul { margin: 4px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
+
+/* demo mode: a full-width strip on top of every page, out to the page edges */
+.demo-banner {
+  /* out through the body padding and the UA body margin the mockup keeps */
+  margin: -28px -24px 16px; padding: 7px 16px 8px;
+  text-align: center; font: 700 19px/1.1 var(--display); letter-spacing: .3px;
+  color: var(--sun-ink); background: var(--sun);
+  border-bottom: 2.5px dashed var(--sun-ink);
+}
+.demo-banner b { font-weight: 700; }

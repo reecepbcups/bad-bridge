@@ -1,0 +1,56 @@
+/* Design tokens, ported from ui/mockup/index.html. Three theme states: light by default,
+   the "chalkboard" dark theme when the OS asks for it (unless data-theme="light" pins light),
+   and dark when data-theme="dark" pins it. */
+
+:root {
+  --paper: #FFFEF9;
+  --ink: #26221E;
+  --ink-soft: #6E665B;
+  --line: #DCD5C8;
+  --hub: #7A5AF8;
+  --hub-tint: #ECE6FF;
+  --eth: #2D7FF9;
+  --eth-tint: #E1EDFF;
+  --crayon: #F0502E;
+  --sun: #FFD84D;
+  --sun-ink: #26221E;
+  --ok: #2FA35A;
+
+  /* Not in the mockup: text-safe variants. The mockup colors are kept for fills, borders and big
+     display text; these reach WCAG AA 4.5:1 on --paper for small text. Same as the base in dark. */
+  --hub-ink: #7857F8;
+  --eth-ink: #0E6CF8;
+  --crayon-ink: #DB3310;
+  --ok-ink: #268449;
+  /* text on an --eth-ink fill (small text) or an --eth fill (big text) */
+  --on-eth: #FFFFFF;
+  /* the crossing scene's land labels, on --hub-tint / --eth-tint (small on phones) */
+  --hub-deep: #5B3FD6;
+  --eth-deep: #0A58CC;
+
+  --display: "Gaegu", "Comic Sans MS", "Chalkboard SE", cursive;
+  --body: "Nunito", ui-rounded, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --wobble: 255px 14px 225px 14px / 14px 225px 14px 255px;
+  --wobble-2: 14px 225px 14px 255px / 255px 14px 225px 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #1D2420; --ink: #F1EEE4; --ink-soft: #A7AFA6; --line: #3A4540;
+    --hub: #B7A3FF; --hub-tint: #2C2A44; --eth: #82B4FF; --eth-tint: #1F3048;
+    --crayon: #FF7C5E; --sun: #FFE070; --ok: #6BD68E;
+    --hub-ink: #B7A3FF; --eth-ink: #82B4FF; --crayon-ink: #FF7C5E; --ok-ink: #6BD68E; --on-eth: #10233F;
+    --hub-deep: #B7A3FF; --eth-deep: #82B4FF;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #1D2420; --ink: #F1EEE4; --ink-soft: #A7AFA6; --line: #3A4540;
+  --hub: #B7A3FF; --hub-tint: #2C2A44; --eth: #82B4FF; --eth-tint: #1F3048;
+  --crayon: #FF7C5E; --sun: #FFE070; --ok: #6BD68E;
+  --hub-ink: #B7A3FF; --eth-ink: #82B4FF; --crayon-ink: #FF7C5E; --ok-ink: #6BD68E; --on-eth: #10233F;
+  --hub-deep: #B7A3FF; --eth-deep: #82B4FF;
+}
