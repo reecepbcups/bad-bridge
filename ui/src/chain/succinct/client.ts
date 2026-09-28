@@ -228,6 +228,32 @@ async function requestProof(wallet: SignerClient, body: Uint8Array, fetchImpl: t
   return requestId
 }
 
+const NONCE_MISMATCH_RE = /failed nonce verification:.*expected (\d+), got \d+/
+
+/**
+ * Calls requestProof, and if it's rejected as a nonce mismatch, retries once with whatever nonce the
+ * rejection itself says is expected. Live-verified (this session): Succinct's mainnet network can answer
+ * GetNonce with a value its own RequestProof endpoint then rejects — reproduced with byte-identical request
+ * bodies where only the nonce field differed, and only the network's own "expected" number was ever accepted
+ * (confirmed independently of signing: a locally-held test key's signature verified correctly against itself
+ * either way, so this isn't a client-side signing bug). A server-side GetNonce/RequestProof inconsistency,
+ * not something this client can avoid up front — so it just adapts.
+ */
+export async function requestProofWithNonceRetry(
+  wallet: SignerClient,
+  buildBody: (nonce: bigint) => Uint8Array,
+  nonce: bigint,
+  fetchImpl: typeof fetch,
+): Promise<Uint8Array> {
+  try {
+    return await requestProof(wallet, buildBody(nonce), fetchImpl)
+  } catch (e) {
+    const match = e instanceof GrpcError ? NONCE_MISMATCH_RE.exec(e.message) : null
+    if (!match?.[1]) throw e
+    return requestProof(wallet, buildBody(BigInt(match[1])), fetchImpl)
+  }
+}
+
 interface StatusResult {
   fulfillmentStatus: number
   proofUri: string | undefined
@@ -266,17 +292,18 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
   opts.onStage?.('requesting-proof')
   const [nonce, params, whitelist] = await Promise.all([getNonce(address, fetchImpl), getProofRequestParams(fetchImpl), getProversByUptime(fetchImpl)])
   const deadline = nowSecs() + calculateTimeoutSecs(DEFAULT_GAS_LIMIT)
-  const body = buildRequestBody({
-    nonce,
-    vkHash,
-    stdinUri: artifactUri,
-    deadline,
-    cycleLimit: DEFAULT_CYCLE_LIMIT,
-    gasLimit: DEFAULT_GAS_LIMIT,
-    whitelist,
-    params,
-  })
-  const requestId = await requestProof(opts.wallet, body, fetchImpl)
+  const buildBody = (n: bigint) =>
+    buildRequestBody({
+      nonce: n,
+      vkHash,
+      stdinUri: artifactUri,
+      deadline,
+      cycleLimit: DEFAULT_CYCLE_LIMIT,
+      gasLimit: DEFAULT_GAS_LIMIT,
+      whitelist,
+      params,
+    })
+  const requestId = await requestProofWithNonceRetry(opts.wallet, buildBody, nonce, fetchImpl)
 
   opts.onStage?.('proving')
   const pollMs = opts.pollMs ?? 5000
