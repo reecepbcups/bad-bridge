@@ -72,7 +72,8 @@ const STAGE_LABEL: Readonly<Record<ProveStage, string>> = {
   confirming: 'Submitting…',
 }
 
-export function useProveFlow(): ProveFlow {
+/** `onProved` runs after a batch lands, so the page can re-read where the kids are now. */
+export function useProveFlow(onProved?: () => void): ProveFlow {
   const { proveKid } = useBridge()
   const toast = useToast()
   const [proving, setProving] = useState<readonly KidId[]>([])
@@ -89,6 +90,7 @@ export function useProveFlow(): ProveFlow {
     try {
       const result = await proveKid.proveKids(ids, { expectedRecipients, onStage: setStage, onProgress: setRequest })
       toast(provenToast(result.proved))
+      onProved?.()
     } catch (e) {
       setFailure({ error: e as BridgeError, ids })
     } finally {
@@ -113,7 +115,7 @@ export function parseRequestId(input: string): Hex | null {
  * Succinct request id and this waits for it, then submits it. Hub height is only needed when Ethereum's client
  * has moved on since the proof was made.
  */
-export function ResumeProof() {
+export function ResumeProof({ onProved }: { onProved?: () => void }) {
   const { proveKid } = useBridge()
   const toast = useToast()
   const idInput = useId()
@@ -138,6 +140,7 @@ export function ResumeProof() {
       const { txHash } = await proveKid.submitRequest(requestId, { height: heightNum, onStage: setStage, onProgress: setRequest })
       toast({ tone: 'ok', title: 'Proof submitted', body: `The proof landed on Ethereum (${txHash.slice(0, 10)}…). Ready kids can be claimed now.` })
       setValue('')
+      onProved?.()
     } catch (e) {
       setError(e as BridgeError)
     } finally {

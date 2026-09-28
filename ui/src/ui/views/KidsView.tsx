@@ -43,10 +43,10 @@ export function KidsView({ address, mode }: { address?: string; mode: KidsMode }
         : {}
     : { eth: connectedEth, hub: connectedHub, ids: remembered.length > 0 ? remembered : undefined }
   const active = Boolean(query.eth || query.hub || query.ids?.length)
-  const trips = useTrips(query)
+  const trips = useTrips(query, { live: mode === 'crossing' })
   const health = useHealth()
   const flow = useClaimFlow()
-  const prove = useProveFlow()
+  const prove = useProveFlow(() => trips.refetch())
   // kids claimed from this page, kept here: a claim can re-key the list and remount its rows
   const [claimed, setClaimed] = useState<readonly KidId[]>([])
   const claim: ClaimFlow = {
@@ -216,7 +216,7 @@ export function KidsView({ address, mode }: { address?: string; mode: KidsMode }
           )}
           <ProveProgress flow={prove} />
           <ProveFailure flow={prove} />
-          {!deployment.demo && crossingView && provingTrips.length > 0 && <ResumeProof />}
+          {!deployment.demo && crossingView && provingTrips.length > 0 && <ResumeProof onProved={trips.refetch} />}
           {trips.error && <ErrorNote error={trips.error} action="read" onRetry={trips.refetch} live={false} />}
           <ul className="list" aria-label="Kids on the bridge">
             {list.map((t) => (
