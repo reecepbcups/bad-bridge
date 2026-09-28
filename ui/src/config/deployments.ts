@@ -128,11 +128,11 @@ const SOURCE = 'https://github.com/reecepbcups/bad-bridge'
 
 const REECE_TEST_BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
 
-/** Mainnet test collection: #2 and #3 already bridged, #1 still on the Hub. */
+/** Mainnet test collection. Minted up to #18 as of 2026-09-28 (cw721 num_tokens/all_tokens, verified live); grows as more get minted for testing. */
 const reeceTest: Deployment = {
   id: 'reece-test',
   collectionName: 'ReeceBadTest',
-  collectionSize: 3,
+  collectionSize: 18,
   demo: false,
   hub: hub(
     'cosmos158d2rz0aw8cxx86j0tl8gfwleqyqefr9xdgth2jdfse2d9uumltsu83rfr',

@@ -20,7 +20,7 @@ describe('selectDeployment', () => {
 
 describe('DEPLOYMENTS', () => {
   it('knows each collection size (ids run 1..size)', () => {
-    expect(DEPLOYMENTS['reece-test'].collectionSize).toBe(3)
+    expect(DEPLOYMENTS['reece-test'].collectionSize).toBe(18)
     expect(DEPLOYMENTS.badkids.collectionSize).toBe(9999)
     expect(DEPLOYMENTS.demo.collectionSize).toBe(9999)
   })
