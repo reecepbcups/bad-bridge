@@ -39,14 +39,22 @@ function short(wei: bigint): string {
 }
 
 /** Opens the swap and deposit modal. Without an Ethereum wallet it falls back to Succinct's own page. */
-export function GetProveButton({ className = 'btn ghost small', onChange }: { className?: string; onChange?: () => void }) {
+export function GetProveButton({
+  className = 'btn ghost small',
+  onChange,
+  children = 'Get PROVE',
+}: {
+  className?: string
+  onChange?: () => void
+  children?: string
+}) {
   const { proveKid } = useBridge()
   const [open, setOpen] = useState(false)
   if (!proveKid) return <ExtLink href={PROVE_ACCOUNT_URL}>Get PROVE</ExtLink>
   return (
     <>
       <button type="button" className={className} onClick={() => setOpen(true)}>
-        Get PROVE
+        {children}
       </button>
       <GetProveSheet open={open} onClose={() => setOpen(false)} onChange={onChange} />
     </>

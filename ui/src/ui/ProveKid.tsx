@@ -367,7 +367,7 @@ export type ProveReady =
   | { status: 'skip' }
   | { status: 'connect' }
   | { status: 'loading' }
-  | { status: 'short'; balance: bigint; refetch: () => void }
+  | { status: 'short'; balance: bigint; inWallet: bigint; refetch: () => void }
   | { status: 'ok' }
 
 /**
@@ -380,11 +380,16 @@ export function useProveReady(): ProveReady {
   const q = useQuery({
     queryKey: ['prove-ready', address],
     enabled: Boolean(proveKid && address),
-    queryFn: () => (proveKid as NonNullable<typeof proveKid>).proveBalance(),
+    queryFn: async () => {
+      const kid = proveKid as NonNullable<typeof proveKid>
+      const [network, inWallet] = await Promise.all([kid.proveBalance(), kid.walletProveBalance().catch(() => 0n)])
+      return { network, inWallet }
+    },
     refetchInterval: 30_000,
   })
   if (deployment.demo || !isLive(deployment)) return { status: 'skip' }
   if (!proveKid || !address) return { status: 'connect' }
   if (q.data === undefined) return { status: 'loading' }
-  return q.data >= PROVE_NEEDED ? { status: 'ok' } : { status: 'short', balance: q.data, refetch: () => void q.refetch() }
+  if (q.data.network >= PROVE_NEEDED) return { status: 'ok' }
+  return { status: 'short', balance: q.data.network, inWallet: q.data.inWallet, refetch: () => void q.refetch() }
 }
