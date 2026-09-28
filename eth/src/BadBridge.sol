@@ -4,6 +4,8 @@ pragma solidity ^0.8.28;
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { ERC721Votes } from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Votes.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ERC2981 } from "@openzeppelin/contracts/token/common/ERC2981.sol";
+import { Ownable, Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 interface IRouter {
     function getClient(string calldata clientId) external view returns (address);
@@ -44,7 +46,8 @@ interface ISP1ICS07Tendermint {
 /// @notice One-way exit for cw721 tokens escrowed on Cosmos Hub. Proves escrow records with the
 /// SP1 membership program against the canonical Eureka cosmoshub-0 client, then mints the same token id.
 /// One kid is one vote, delegated to its holder unless they pick someone else.
-contract BadBridge is ERC721, ERC721Votes {
+/// The owner is cosmetic: it can set the royalty and contractURI, nothing that mints or moves kids.
+contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
     struct ConsensusState {
         uint128 timestamp;
         bytes32 root;
@@ -67,15 +70,21 @@ contract BadBridge is ERC721, ERC721Votes {
         KVPair[] kvPairs;
     }
 
+    /// @notice 10%
+    uint96 public constant MAX_ROYALTY_BPS = 1000;
+
     IRouter public immutable ROUTER;
     /// @notice raw 32-byte escrow contract address on Cosmos Hub
     bytes32 public immutable ESCROW;
     string public clientId;
     string private baseURI;
+    string private _contractURI;
 
     mapping(uint32 tokenId => address recipient) public proven;
 
     event Proven(uint32 indexed tokenId, address indexed recipient);
+    /// @notice ERC-7572
+    event ContractURIUpdated();
 
     error ClientFrozen();
     error BadConsensusState();
@@ -83,6 +92,7 @@ contract BadBridge is ERC721, ERC721Votes {
     error RootMismatch();
     error BadPath(uint256 index);
     error NotProven(uint32 tokenId);
+    error RoyaltyTooHigh(uint96 bps);
 
     constructor(
         IRouter router,
@@ -90,15 +100,37 @@ contract BadBridge is ERC721, ERC721Votes {
         bytes32 escrow,
         string memory name_,
         string memory symbol_,
-        string memory baseURI_
+        string memory baseURI_,
+        address owner_,
+        address royaltyReceiver,
+        uint96 royaltyBps,
+        string memory contractURI_
     )
         ERC721(name_, symbol_)
         EIP712(name_, "1")
+        Ownable(owner_)
     {
         ROUTER = router;
         clientId = clientId_;
         ESCROW = escrow;
         baseURI = baseURI_;
+        _setRoyalty(royaltyReceiver, royaltyBps);
+        _contractURI = contractURI_;
+    }
+
+    /// @notice Royalty for every kid, capped at MAX_ROYALTY_BPS. Marketplaces may ignore it.
+    function setRoyalty(address receiver, uint96 bps) external onlyOwner {
+        _setRoyalty(receiver, bps);
+    }
+
+    function setContractURI(string calldata uri) external onlyOwner {
+        _contractURI = uri;
+        emit ContractURIUpdated();
+    }
+
+    /// @notice ERC-7572 collection metadata
+    function contractURI() external view returns (string memory) {
+        return _contractURI;
     }
 
     function lightClient() public view returns (ISP1ICS07Tendermint) {
@@ -195,5 +227,14 @@ contract BadBridge is ERC721, ERC721Votes {
 
     function _increaseBalance(address account, uint128 amount) internal override(ERC721, ERC721Votes) {
         super._increaseBalance(account, amount);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC2981) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
+    function _setRoyalty(address receiver, uint96 bps) private {
+        if (bps > MAX_ROYALTY_BPS) revert RoyaltyTooHigh(bps);
+        _setDefaultRoyalty(receiver, bps);
     }
 }
