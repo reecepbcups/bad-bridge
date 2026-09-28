@@ -26,13 +26,19 @@ contract E2E is Script {
         vm.startBroadcast();
         BadBridge bridge = BadBridge(vm.envOr("BRIDGE", address(0)));
         if (address(bridge) == address(0)) {
+            // test deploy: the broadcaster owns it and takes a 0% royalty
+            (, address sender,) = vm.readCallers();
             bridge = new BadBridge(
                 ROUTER,
                 "cosmoshub-0",
                 vm.envBytes32("ESCROW"),
                 vm.envOr("NAME", string("Bad Bridge Test")),
                 vm.envOr("SYMBOL", string("BBT")),
-                vm.envOr("BASE_URI", string("ipfs://bad-bridge-test/"))
+                vm.envOr("BASE_URI", string("ipfs://bad-bridge-test/")),
+                sender,
+                sender,
+                0,
+                ""
             );
         }
         bridge.submitBatch(uint64(vm.envUint("HEIGHT")), cs, proof);
@@ -40,6 +46,14 @@ contract E2E is Script {
         vm.stopBroadcast();
 
         console.log("bridge", address(bridge));
-        console.log("owner of token", bridge.ownerOf(tokenId));
+        address holder = bridge.ownerOf(tokenId);
+        console.log("owner of token", holder);
+        // a reused BRIDGE may predate votes (ReeceBadTest does), so don't let the logging revert the run
+        try bridge.getVotes(holder) returns (uint256 votes) {
+            console.log("holder votes", votes);
+            console.log("total supply", bridge.totalSupply());
+        } catch {
+            console.log("bridge has no votes");
+        }
     }
 }

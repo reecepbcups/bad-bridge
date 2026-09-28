@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, zeroAddress, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
+import { getAddress, zeroAddress, type Address, type Chain, type Client, type Hex, type Transport } from 'viem'
 import { estimateContractGas, getCode, getGasPrice, getStorageAt, multicall, readContract } from 'viem/actions'
 import type { Deployment } from '../../config/deployments'
 import {
@@ -11,7 +11,7 @@ import {
   type KidEthStatus,
   type KidId,
 } from '../types'
-import { bridgeAbi, lightClientAbi, multicall3WriteAbi, routerAbi } from './abi'
+import { bridgeAbi, lightClientAbi, routerAbi } from './abi'
 import { createEthPublicClient } from './client'
 import { typicalClaimGas } from './gas'
 import { findRevert, toEthError } from './errors'
@@ -66,15 +66,6 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
   return out
 }
 
-/** Multicall3 aggregate3 calls that claim each kid. */
-export function claimCalls(bridge: Address, ids: readonly KidId[], allowFailure: boolean) {
-  return ids.map((id) => ({
-    target: bridge,
-    allowFailure,
-    callData: encodeFunctionData({ abi: bridgeAbi, functionName: 'claim', args: [id] }),
-  }))
-}
-
 /** True for code that makes an address a contract. Empty code and EIP-7702 delegations are EOAs. */
 export function isContractCode(code: Hex | undefined): boolean {
   if (!code || code === '0x') return false
@@ -121,13 +112,7 @@ export function createEthReader(deployment: Deployment, options: EthReaderOption
       if (ids.length === 1) {
         return await estimateContractGas(client, { address: bridge, abi: bridgeAbi, functionName: 'claim', args: [ids[0] as KidId] })
       }
-      // allowFailure: false, like the writer's estimate: one kid that can't be claimed makes it revert
-      return await estimateContractGas(client, {
-        address: multicallAddress,
-        abi: multicall3WriteAbi,
-        functionName: 'aggregate3',
-        args: [claimCalls(bridge, ids, false)],
-      })
+      return await estimateContractGas(client, { address: bridge, abi: bridgeAbi, functionName: 'claimMany', args: [[...ids]] })
     } catch {
       return null
     }

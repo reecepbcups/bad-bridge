@@ -11,12 +11,17 @@ abstract contract BadBridgeBase is Test {
     bytes32 constant ESCROW = bytes32(uint256(0xe5c0));
     bytes32 constant VKEY = bytes32(uint256(0x0bd8ec));
     uint64 constant HEIGHT = 100;
+    address constant OWNER = address(0x0e1);
+    address constant ROYALTY = address(0x0e2);
+    uint96 constant ROYALTY_BPS = 500;
 
     BadBridge bridge;
     BadBridge.ConsensusState cs;
 
     function setUp() public virtual {
-        bridge = new BadBridge(IRouter(ROUTER), "cosmoshub-0", ESCROW, "Bad Kids", "BADKIDS", "ipfs://x/");
+        bridge = new BadBridge(
+            IRouter(ROUTER), "cosmoshub-0", ESCROW, "Bad Kids", "BADKIDS", "ipfs://x/", OWNER, ROYALTY, ROYALTY_BPS, "ipfs://c"
+        );
         cs = BadBridge.ConsensusState({ timestamp: 1, root: keccak256("root"), nextValidatorsHash: bytes32(0) });
 
         vm.mockCall(ROUTER, abi.encodeCall(IRouter.getClient, ("cosmoshub-0")), abi.encode(CLIENT));
@@ -61,6 +66,10 @@ abstract contract BadBridgeBase is Test {
         return BadBridge.SP1Proof({ vKey: VKEY, publicValues: pv, proof: "" });
     }
 
+    function proveAndClaim(uint32 tokenId, address to) internal {
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", tokenId), abi.encodePacked(to))));
+        bridge.claim(tokenId);
+    }
 }
 
 contract BadBridgeTest is BadBridgeBase {
@@ -212,6 +221,303 @@ contract BadBridgeTest is BadBridgeBase {
         vm.expectRevert(abi.encodeWithSelector(BadBridge.NotProven.selector, tokenId));
         bridge.claim(tokenId);
     }
+
+    function prove(uint32 tokenId, address to) internal {
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", tokenId), abi.encodePacked(to))));
+    }
+
+    function ids(uint32 a, uint32 b, uint32 c) internal pure returns (uint32[] memory out) {
+        out = new uint32[](3);
+        (out[0], out[1], out[2]) = (a, b, c);
+    }
+
+    function test_claimMany() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+        prove(1, alice);
+        prove(7012, bob);
+        prove(9999, alice);
+        bridge.claimMany(ids(1, 7012, 9999));
+        assertEq(bridge.ownerOf(1), alice);
+        assertEq(bridge.ownerOf(7012), bob);
+        assertEq(bridge.ownerOf(9999), alice);
+    }
+
+    function test_claimManySkipsClaimed() public {
+        address alice = makeAddr("alice");
+        prove(1, alice);
+        prove(2, alice);
+        prove(3, alice);
+        bridge.claim(2);
+        bridge.claimMany(ids(1, 2, 3));
+        assertEq(bridge.balanceOf(alice), 3);
+        assertEq(bridge.totalSupply(), 3);
+    }
+
+    function test_claimManyDuplicateIds() public {
+        address alice = makeAddr("alice");
+        prove(5, alice);
+        bridge.claimMany(ids(5, 5, 5));
+        assertEq(bridge.balanceOf(alice), 1);
+    }
+
+    function test_claimManyUnprovenReverts() public {
+        address alice = makeAddr("alice");
+        prove(1, alice);
+        prove(3, alice);
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.NotProven.selector, 2));
+        bridge.claimMany(ids(1, 2, 3));
+        assertEq(bridge.balanceOf(alice), 0);
+    }
+
+    function test_claimManyEmpty() public {
+        bridge.claimMany(new uint32[](0));
+        assertEq(bridge.totalSupply(), 0);
+    }
+}
+
+contract BadBridgeVotesTest is BadBridgeBase {
+    bytes32 constant DELEGATION_TYPEHASH = keccak256("Delegation(address delegatee,uint256 nonce,uint256 expiry)");
+    bytes32 constant DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address carol = makeAddr("carol");
+
+    function test_claimGivesVote() public {
+        proveAndClaim(7012, alice);
+        assertEq(bridge.getVotes(alice), 1);
+        assertEq(bridge.delegates(alice), alice);
+    }
+
+    function test_transferMovesVote() public {
+        proveAndClaim(1, alice);
+        vm.prank(alice);
+        bridge.transferFrom(alice, bob, 1);
+        assertEq(bridge.getVotes(alice), 0);
+        assertEq(bridge.getVotes(bob), 1);
+    }
+
+    function test_delegateAndBack() public {
+        proveAndClaim(1, alice);
+        proveAndClaim(2, alice);
+
+        vm.prank(alice);
+        bridge.delegate(carol);
+        assertEq(bridge.delegates(alice), carol);
+        assertEq(bridge.getVotes(alice), 0);
+        assertEq(bridge.getVotes(carol), 2);
+
+        // stock OZ would send these votes to address(0) and lose them
+        vm.prank(alice);
+        bridge.delegate(address(0));
+        assertEq(bridge.delegates(alice), alice);
+        assertEq(bridge.getVotes(alice), 2);
+        assertEq(bridge.getVotes(carol), 0);
+    }
+
+    function testFuzz_delegateZeroNeverLosesVotes(uint8[8] calldata picks) public {
+        address[4] memory targets = [alice, bob, carol, address(0)];
+        proveAndClaim(1, alice);
+        proveAndClaim(2, bob);
+        proveAndClaim(3, bob);
+        for (uint256 i = 0; i < picks.length; ++i) {
+            // alternate who delegates so both holders move votes around
+            address from = i % 2 == 0 ? alice : bob;
+            vm.prank(from);
+            bridge.delegate(targets[picks[i] % 4]);
+            assertEq(bridge.getVotes(alice) + bridge.getVotes(bob) + bridge.getVotes(carol), bridge.totalSupply());
+        }
+    }
+
+    function test_delegateBySig() public {
+        (address signer, uint256 pk) = makeAddrAndKey("signer");
+        proveAndClaim(1, signer);
+        uint256 expiry = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = signDelegation(pk, carol, 0, expiry);
+
+        bridge.delegateBySig(carol, 0, expiry, v, r, s);
+        assertEq(bridge.delegates(signer), carol);
+        assertEq(bridge.getVotes(carol), 1);
+
+        vm.expectRevert(abi.encodeWithSignature("InvalidAccountNonce(address,uint256)", signer, 1));
+        bridge.delegateBySig(carol, 0, expiry, v, r, s);
+
+        (v, r, s) = signDelegation(pk, bob, 1, expiry);
+        vm.warp(expiry + 1);
+        vm.expectRevert(abi.encodeWithSignature("VotesExpiredSignature(uint256)", expiry));
+        bridge.delegateBySig(bob, 1, expiry, v, r, s);
+    }
+
+    function test_pastVotesAndSupply() public {
+        vm.warp(1000);
+        proveAndClaim(1, alice);
+        vm.warp(2000);
+        proveAndClaim(2, alice);
+        vm.warp(3000);
+
+        assertEq(bridge.getPastTotalSupply(1500), 1);
+        assertEq(bridge.getPastVotes(alice, 1500), 1);
+        assertEq(bridge.getPastTotalSupply(2500), 2);
+        assertEq(bridge.getPastVotes(alice, 2500), 2);
+
+        // the current timepoint isn't final yet
+        vm.expectRevert(abi.encodeWithSignature("ERC5805FutureLookup(uint256,uint48)", 3000, uint48(3000)));
+        bridge.getPastTotalSupply(3000);
+    }
+
+    function test_clockMode() public {
+        vm.warp(12_345);
+        assertEq(bridge.clock(), 12_345);
+        assertEq(bridge.CLOCK_MODE(), "mode=timestamp");
+    }
+
+    function test_totalSupplyTracksClaims() public {
+        assertEq(bridge.totalSupply(), 0);
+        proveAndClaim(1, alice);
+        proveAndClaim(7012, bob);
+        proveAndClaim(9999, carol);
+        assertEq(bridge.totalSupply(), 3);
+    }
+
+    function test_contractRecipientGetsVotes() public {
+        // escrow and lending contracts vote with the kids they hold, the cost of default self-delegation
+        address vault = address(new NoReceiver());
+        proveAndClaim(1, vault);
+        assertEq(bridge.getVotes(vault), 1);
+    }
+
+    function signDelegation(uint256 pk, address delegatee, uint256 nonce, uint256 expiry)
+        internal
+        view
+        returns (uint8, bytes32, bytes32)
+    {
+        bytes32 domain = keccak256(
+            abi.encode(DOMAIN_TYPEHASH, keccak256("Bad Kids"), keccak256("1"), block.chainid, address(bridge))
+        );
+        bytes32 structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, delegatee, nonce, expiry));
+        return vm.sign(pk, keccak256(abi.encodePacked("\x19\x01", domain, structHash)));
+    }
+}
+
+contract BadBridgeOwnerTest is BadBridgeBase {
+    function deployWith(address owner_, address receiver, uint96 bps) internal returns (BadBridge) {
+        return new BadBridge(IRouter(ROUTER), "cosmoshub-0", ESCROW, "Bad Kids", "BADKIDS", "ipfs://x/", owner_, receiver, bps, "");
+    }
+
+    function test_royaltyInfo() public view {
+        (address receiver, uint256 amount) = bridge.royaltyInfo(7012, 1 ether);
+        assertEq(receiver, ROYALTY);
+        assertEq(amount, 0.05 ether);
+    }
+
+    function test_royaltyCap() public {
+        deployWith(OWNER, ROYALTY, 1000);
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.RoyaltyTooHigh.selector, 1001));
+        deployWith(OWNER, ROYALTY, 1001);
+
+        vm.startPrank(OWNER);
+        bridge.setRoyalty(ROYALTY, 1000);
+        vm.expectRevert(abi.encodeWithSelector(BadBridge.RoyaltyTooHigh.selector, 1001));
+        bridge.setRoyalty(ROYALTY, 1001);
+        vm.stopPrank();
+    }
+
+    function test_royaltyZeroReceiverReverts() public {
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSignature("ERC2981InvalidDefaultRoyaltyReceiver(address)", address(0)));
+        bridge.setRoyalty(address(0), 500);
+    }
+
+    function test_zeroOwnerReverts() public {
+        vm.expectRevert(abi.encodeWithSignature("OwnableInvalidOwner(address)", address(0)));
+        deployWith(address(0), ROYALTY, 500);
+    }
+
+    function test_onlyOwner() public {
+        address eve = makeAddr("eve");
+        vm.startPrank(eve);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", eve));
+        bridge.setRoyalty(eve, 1000);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", eve));
+        bridge.setContractURI("ipfs://evil");
+        vm.stopPrank();
+    }
+
+    function test_ownershipTwoStep() public {
+        address dao = makeAddr("dao");
+        vm.prank(OWNER);
+        bridge.transferOwnership(dao);
+        assertEq(bridge.owner(), OWNER);
+        assertEq(bridge.pendingOwner(), dao);
+
+        vm.prank(dao);
+        bridge.acceptOwnership();
+        assertEq(bridge.owner(), dao);
+    }
+
+    function test_renounceFreezes() public {
+        vm.prank(OWNER);
+        bridge.renounceOwnership();
+        vm.startPrank(OWNER);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", OWNER));
+        bridge.setRoyalty(ROYALTY, 100);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", OWNER));
+        bridge.setContractURI("ipfs://new");
+        vm.stopPrank();
+    }
+
+    function test_contractURI() public {
+        assertEq(bridge.contractURI(), "ipfs://c");
+        vm.expectEmit(address(bridge));
+        emit BadBridge.ContractURIUpdated();
+        vm.prank(OWNER);
+        bridge.setContractURI("ipfs://d");
+        assertEq(bridge.contractURI(), "ipfs://d");
+    }
+
+    function test_setRoyaltyEmits() public {
+        vm.expectEmit(address(bridge));
+        emit BadBridge.RoyaltyUpdated(ROYALTY, 500);
+        vm.prank(OWNER);
+        bridge.setRoyalty(ROYALTY, 500);
+    }
+
+    function test_supportsInterface() public view {
+        assertTrue(bridge.supportsInterface(0x01ffc9a7)); // ERC-165
+        assertTrue(bridge.supportsInterface(0x80ac58cd)); // ERC-721
+        assertTrue(bridge.supportsInterface(0x5b5e139f)); // ERC-721 Metadata
+        assertTrue(bridge.supportsInterface(0x2a55205a)); // ERC-2981
+        assertFalse(bridge.supportsInterface(0xffffffff));
+    }
+
+    /// Whatever the owner does, bridge state, balances, metadata and votes don't move.
+    function testFuzz_ownerCantTouchBridge(address receiver, uint96 bps, string calldata uri, address newOwner) public {
+        vm.assume(receiver != address(0) && newOwner != address(0));
+        bps = uint96(bound(bps, 0, 1000));
+        address alice = makeAddr("alice");
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", 1), abi.encodePacked(alice))));
+        bridge.submitBatch(HEIGHT, cs, proofFor(kv(key(ESCROW, "b", 2), abi.encodePacked(alice))));
+        bridge.claim(1);
+
+        vm.startPrank(OWNER);
+        bridge.setRoyalty(receiver, bps);
+        bridge.setContractURI(uri);
+        bridge.transferOwnership(newOwner);
+        vm.stopPrank();
+
+        assertEq(bridge.proven(1), alice);
+        assertEq(bridge.proven(2), alice);
+        assertEq(bridge.ownerOf(1), alice);
+        assertEq(bridge.tokenURI(1), "ipfs://x/1");
+        assertEq(bridge.ESCROW(), ESCROW);
+        assertEq(bridge.clientId(), "cosmoshub-0");
+        assertEq(bridge.getVotes(alice), 1);
+        // the unclaimed kid still lands with its recipient
+        bridge.claim(2);
+        assertEq(bridge.ownerOf(2), alice);
+    }
 }
 
 /// Drives random batches and claims so the invariants below run against many states.
@@ -262,6 +568,19 @@ contract Handler is Test {
         }
     }
 
+    function claimMany(uint256 seed, uint8 n) external {
+        if (ids.length == 0) return;
+        uint32[] memory batch = new uint32[](bound(n, 0, 4));
+        for (uint256 i = 0; i < batch.length; ++i) {
+            batch[i] = ids[uint256(keccak256(abi.encode(seed, i))) % ids.length];
+        }
+        // proven ids only, so it must never revert, claimed or not
+        bridge.claimMany(batch);
+        for (uint256 i = 0; i < batch.length; ++i) {
+            minted[batch[i]] = true;
+        }
+    }
+
     function idsLength() external view returns (uint256) {
         return ids.length;
     }
@@ -283,6 +602,142 @@ contract BadBridgeInvariantTest is BadBridgeBase {
             assertEq(bridge.proven(id), handler.firstSeen(id));
             if (handler.minted(id)) assertEq(bridge.ownerOf(id), handler.firstSeen(id));
         }
+    }
+}
+
+/// Like Handler, but kids move and votes get delegated. Everyone involved is in a fixed actor set
+/// so the invariants can add up every vote.
+contract VotesHandler is Test {
+    BadBridge public bridge;
+    bytes32 root;
+    bytes32 escrow;
+    address[5] public actors;
+    uint32[] public minted;
+    mapping(uint32 => bool) public isMinted;
+    mapping(uint32 => bool) seen;
+    uint32[] proven;
+    address owner;
+
+    constructor(BadBridge bridge_, bytes32 root_, bytes32 escrow_, address owner_) {
+        bridge = bridge_;
+        root = root_;
+        escrow = escrow_;
+        owner = owner_;
+        for (uint256 i = 0; i < actors.length; ++i) {
+            actors[i] = makeAddr(string.concat("actor", vm.toString(i)));
+        }
+    }
+
+    function submit(uint32 tokenId, uint8 toIdx) external {
+        tokenId = uint32(bound(tokenId, 1, 50));
+        BadBridge.KVPair[] memory kvs = new BadBridge.KVPair[](1);
+        kvs[0].path = new bytes[](2);
+        kvs[0].path[0] = "wasm";
+        kvs[0].path[1] = abi.encodePacked(bytes1(0x03), escrow, bytes1("b"), tokenId);
+        kvs[0].value = abi.encodePacked(actors[toIdx % actors.length]);
+        bytes memory pv = abi.encode(BadBridge.MembershipOutput({ commitmentRoot: root, kvPairs: kvs }));
+        bridge.submitBatch(
+            100,
+            BadBridge.ConsensusState({ timestamp: 1, root: root, nextValidatorsHash: bytes32(0) }),
+            BadBridge.SP1Proof({ vKey: bytes32(uint256(0x0bd8ec)), publicValues: pv, proof: "" })
+        );
+        if (!seen[tokenId]) {
+            seen[tokenId] = true;
+            proven.push(tokenId);
+        }
+    }
+
+    function claim(uint256 seed) external {
+        if (proven.length == 0) return;
+        uint32 tokenId = proven[seed % proven.length];
+        if (isMinted[tokenId]) return;
+        bridge.claim(tokenId);
+        isMinted[tokenId] = true;
+        minted.push(tokenId);
+    }
+
+    function claimMany(uint256 seed, uint8 n) external {
+        if (proven.length == 0) return;
+        uint32[] memory batch = new uint32[](bound(n, 0, 4));
+        for (uint256 i = 0; i < batch.length; ++i) {
+            batch[i] = proven[uint256(keccak256(abi.encode(seed, i))) % proven.length];
+        }
+        bridge.claimMany(batch);
+        for (uint256 i = 0; i < batch.length; ++i) {
+            if (!isMinted[batch[i]]) {
+                isMinted[batch[i]] = true;
+                minted.push(batch[i]);
+            }
+        }
+    }
+
+    function transfer(uint256 seed, uint8 toIdx) external {
+        if (minted.length == 0) return;
+        uint32 tokenId = minted[seed % minted.length];
+        address from = bridge.ownerOf(tokenId);
+        vm.prank(from);
+        bridge.transferFrom(from, actors[toIdx % actors.length], tokenId);
+    }
+
+    function delegate(uint8 fromIdx, uint8 toIdx) external {
+        // one extra slot picks address(0), which must mean "back to self"
+        uint256 t = toIdx % (actors.length + 1);
+        vm.prank(actors[fromIdx % actors.length]);
+        bridge.delegate(t == actors.length ? address(0) : actors[t]);
+    }
+
+    function warp(uint32 secs) external {
+        vm.warp(block.timestamp + bound(secs, 1, 1 days));
+    }
+
+    // owner actions mixed in, so the invariants also cover "the owner can't move votes or kids"
+    function setRoyalty(uint8 toIdx, uint96 bps) external {
+        vm.prank(owner);
+        bridge.setRoyalty(actors[toIdx % actors.length], uint96(bound(bps, 0, 1000)));
+    }
+
+    function setContractURI(uint256 seed) external {
+        vm.prank(owner);
+        bridge.setContractURI(vm.toString(seed));
+    }
+
+    function mintedLength() external view returns (uint256) {
+        return minted.length;
+    }
+}
+
+contract BadBridgeVotesInvariantTest is BadBridgeBase {
+    VotesHandler handler;
+
+    function setUp() public override {
+        super.setUp();
+        handler = new VotesHandler(bridge, cs.root, ESCROW, OWNER);
+        targetContract(address(handler));
+    }
+
+    function invariant_votesSumToSupply() public view {
+        uint256 sum;
+        for (uint256 i = 0; i < 5; ++i) {
+            sum += bridge.getVotes(handler.actors(i));
+        }
+        assertEq(sum, bridge.totalSupply());
+    }
+
+    /// Every actor's votes are exactly the kids held by whoever delegates to them.
+    function invariant_votesMatchDelegations() public view {
+        for (uint256 i = 0; i < 5; ++i) {
+            address a = handler.actors(i);
+            uint256 expected;
+            for (uint256 j = 0; j < 5; ++j) {
+                address h = handler.actors(j);
+                if (bridge.delegates(h) == a) expected += bridge.balanceOf(h);
+            }
+            assertEq(bridge.getVotes(a), expected);
+        }
+    }
+
+    function invariant_supplyMatchesMints() public view {
+        assertEq(bridge.totalSupply(), handler.mintedLength());
     }
 }
 

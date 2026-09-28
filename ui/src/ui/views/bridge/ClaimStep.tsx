@@ -3,7 +3,7 @@ import { useRef } from 'react'
 import { useBridge } from '../../../chain/context'
 import { useClaimEstimate, useClaimKids } from '../../../trips/hooks'
 import type { Trip } from '../../../trips/types'
-import { claimedToast, claimingHint, claimingLabel, formatEth } from '../../Claim'
+import { CLAIM_BATCH_CAP, claimedToast, claimingHint, claimingLabel, formatEth } from '../../Claim'
 import { ConnectButton } from '../../Connect'
 import { ErrorNote } from '../../ErrorNote'
 import { ExtLink } from '../../ExtLink'
@@ -39,8 +39,10 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
   const stageOf = new Map(trips.map((t) => [t.tokenId, t.stage]))
   const ready = sent.ids.filter((id) => stageOf.get(id) === 'ready')
   const already = sent.ids.filter((id) => stageOf.get(id) === 'home-eth')
+  // a big send is claimed in several txs, this many at a time
+  const batch = ready.slice(0, CLAIM_BATCH_CAP)
   const n = ready.length
-  const estimate = useClaimEstimate(ready)
+  const estimate = useClaimEstimate(batch)
   // survives an unmount/remount of this step: a claim from before the remount still counts as pending
   const claimMutating = useIsMutating({ mutationKey: ['bridge', deployment.id, 'claim'] }) > 0
   const pending = claim.status === 'pending' || claimMutating
@@ -51,9 +53,9 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
     // aria-disabled while pending keeps focus on the button, so the click is refused here
     if (pending || n === 0) return
     try {
-      const result = await claim.run(ready)
+      const result = await claim.run(batch)
       update({ claimTx: result.txHash })
-      toast(claimedToast(ready, result.txHash, deployment.explorer))
+      toast(claimedToast(batch, result.txHash, deployment.explorer))
     } catch {
       // claim.error has it
     }
@@ -91,7 +93,7 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
             aria-disabled={pending || undefined}
             onClick={() => void onClaim()}
           >
-            {stage ? claimingLabel(stage, ethWallet.walletName) : `Claim ${n} ${kidWord(n)}`}
+            {stage ? claimingLabel(stage, ethWallet.walletName) : n > batch.length ? `Claim ${batch.length} of ${n}` : `Claim ${n} ${kidWord(n)}`}
           </button>
         )}
       </div>
@@ -113,7 +115,9 @@ export function ClaimStep({ sent, trips }: { sent: SentTrip; trips: readonly Tri
         </>
       )}
       <p className="hint center">
-        One Ethereum transaction claims {n === 1 ? 'it' : n === 2 ? 'both' : 'them all'}. Anyone can claim; it always goes to{' '}
+        {n > batch.length
+          ? `That's a lot of kids, so it takes a few Ethereum transactions, ${CLAIM_BATCH_CAP} at a time.`
+          : `One Ethereum transaction claims ${n === 1 ? 'it' : n === 2 ? 'both' : 'them all'}.`} Anyone can claim; it always goes to{' '}
         <span className="mono nowrap">{shortAddress(sent.recipient)}</span>.
         {/* COPY: claim hint */}
       </p>

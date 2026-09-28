@@ -2,6 +2,11 @@
 pragma solidity ^0.8.28;
 
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { ERC721Votes } from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Votes.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ERC2981 } from "@openzeppelin/contracts/token/common/ERC2981.sol";
+import { Ownable, Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { Time } from "@openzeppelin/contracts/utils/types/Time.sol";
 
 interface IRouter {
     function getClient(string calldata clientId) external view returns (address);
@@ -41,7 +46,9 @@ interface ISP1ICS07Tendermint {
 
 /// @notice One-way exit for cw721 tokens escrowed on Cosmos Hub. Proves escrow records with the
 /// SP1 membership program against the canonical Eureka cosmoshub-0 client, then mints the same token id.
-contract BadBridge is ERC721 {
+/// One kid is one vote, delegated to its holder unless they pick someone else.
+/// The owner is cosmetic: it can set the royalty and contractURI, nothing that mints or moves kids.
+contract BadBridge is ERC721, ERC721Votes, ERC2981, Ownable2Step {
     struct ConsensusState {
         uint128 timestamp;
         bytes32 root;
@@ -64,15 +71,22 @@ contract BadBridge is ERC721 {
         KVPair[] kvPairs;
     }
 
+    /// @notice 10%
+    uint96 public constant MAX_ROYALTY_BPS = 1000;
+
     IRouter public immutable ROUTER;
     /// @notice raw 32-byte escrow contract address on Cosmos Hub
     bytes32 public immutable ESCROW;
     string public clientId;
     string private baseURI;
+    string private _contractURI;
 
     mapping(uint32 tokenId => address recipient) public proven;
 
     event Proven(uint32 indexed tokenId, address indexed recipient);
+    /// @notice ERC-7572
+    event ContractURIUpdated();
+    event RoyaltyUpdated(address indexed receiver, uint96 bps);
 
     error ClientFrozen();
     error BadConsensusState();
@@ -80,6 +94,7 @@ contract BadBridge is ERC721 {
     error RootMismatch();
     error BadPath(uint256 index);
     error NotProven(uint32 tokenId);
+    error RoyaltyTooHigh(uint96 bps);
 
     constructor(
         IRouter router,
@@ -87,14 +102,38 @@ contract BadBridge is ERC721 {
         bytes32 escrow,
         string memory name_,
         string memory symbol_,
-        string memory baseURI_
+        string memory baseURI_,
+        address owner_,
+        address royaltyReceiver,
+        uint96 royaltyBps,
+        string memory contractURI_
     )
         ERC721(name_, symbol_)
+        EIP712(name_, "1")
+        Ownable(owner_)
     {
         ROUTER = router;
         clientId = clientId_;
         ESCROW = escrow;
         baseURI = baseURI_;
+        _setRoyalty(royaltyReceiver, royaltyBps);
+        _contractURI = contractURI_;
+    }
+
+    /// @notice Royalty for every kid, capped at MAX_ROYALTY_BPS. Marketplaces may ignore it.
+    function setRoyalty(address receiver, uint96 bps) external onlyOwner {
+        _setRoyalty(receiver, bps);
+        emit RoyaltyUpdated(receiver, bps);
+    }
+
+    function setContractURI(string calldata uri) external onlyOwner {
+        _contractURI = uri;
+        emit ContractURIUpdated();
+    }
+
+    /// @notice ERC-7572 collection metadata
+    function contractURI() external view returns (string memory) {
+        return _contractURI;
     }
 
     function lightClient() public view returns (ISP1ICS07Tendermint) {
@@ -128,11 +167,45 @@ contract BadBridge is ERC721 {
 
     /// @notice Mints a proven token to its recorded recipient. Anyone can call it.
     function claim(uint32 tokenId) external {
-        address to = proven[tokenId];
-        if (to == address(0)) revert NotProven(tokenId);
-        // _mint reverts if the token exists, so a second claim can't mint twice. Not _safeMint:
+        // _mint reverts if the token exists, so a second claim can't mint twice. That only holds
+        // because nothing can burn: a burn path would need a claimed flag in _recipient. Not _safeMint:
         // a recipient contract without onERC721Received would strand the kid forever.
-        _mint(to, tokenId);
+        _mint(_recipient(tokenId), tokenId);
+    }
+
+    /// @notice Claims several proven kids in one tx. Anyone can call it.
+    function claimMany(uint32[] calldata tokenIds) external {
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
+            uint32 tokenId = tokenIds[i];
+            address to = _recipient(tokenId);
+            // already claimed by someone, skip so one front-run claim can't sink the batch
+            if (_ownerOf(tokenId) == address(0)) _mint(to, tokenId);
+        }
+    }
+
+    /// @notice Kids minted so far. Sparse, since only bridged ids exist.
+    function totalSupply() external view returns (uint256) {
+        return _getTotalSupply();
+    }
+
+    function clock() public view override returns (uint48) {
+        return Time.timestamp();
+    }
+
+    // solhint-disable-next-line func-name-mixedcase
+    function CLOCK_MODE() public pure override returns (string memory) {
+        return "mode=timestamp";
+    }
+
+    /// @dev Unset means self, so holders vote without sending a delegate tx first (Nouns-style).
+    function delegates(address account) public view override returns (address) {
+        address delegatee = super.delegates(account);
+        return delegatee == address(0) ? account : delegatee;
+    }
+
+    /// @dev delegate(0) would move votes to address(0) while delegates() still reports self. Map it to self.
+    function _delegate(address account, address delegatee) internal override {
+        super._delegate(account, delegatee == address(0) ? account : delegatee);
     }
 
     /// @dev Whole attack surface. Path must be exactly ["wasm", 0x03 || ESCROW || "b" || u32 BE] with a 20-byte value.
@@ -153,5 +226,32 @@ contract BadBridge is ERC721 {
 
     function _baseURI() internal view override returns (string memory) {
         return baseURI;
+    }
+
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721, ERC721Votes)
+        returns (address)
+    {
+        return super._update(to, tokenId, auth);
+    }
+
+    function _increaseBalance(address account, uint128 amount) internal override(ERC721, ERC721Votes) {
+        super._increaseBalance(account, amount);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC2981) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
+    /// @dev The one place both claim paths check a kid was proven.
+    function _recipient(uint32 tokenId) private view returns (address to) {
+        to = proven[tokenId];
+        if (to == address(0)) revert NotProven(tokenId);
+    }
+
+    function _setRoyalty(address receiver, uint96 bps) private {
+        if (bps > MAX_ROYALTY_BPS) revert RoyaltyTooHigh(bps);
+        _setDefaultRoyalty(receiver, bps);
     }
 }
