@@ -2,6 +2,8 @@
 pragma solidity ^0.8.28;
 
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { ERC721Votes } from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Votes.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 interface IRouter {
     function getClient(string calldata clientId) external view returns (address);
@@ -41,7 +43,8 @@ interface ISP1ICS07Tendermint {
 
 /// @notice One-way exit for cw721 tokens escrowed on Cosmos Hub. Proves escrow records with the
 /// SP1 membership program against the canonical Eureka cosmoshub-0 client, then mints the same token id.
-contract BadBridge is ERC721 {
+/// One kid is one vote, delegated to its holder unless they pick someone else.
+contract BadBridge is ERC721, ERC721Votes {
     struct ConsensusState {
         uint128 timestamp;
         bytes32 root;
@@ -90,6 +93,7 @@ contract BadBridge is ERC721 {
         string memory baseURI_
     )
         ERC721(name_, symbol_)
+        EIP712(name_, "1")
     {
         ROUTER = router;
         clientId = clientId_;
@@ -130,9 +134,35 @@ contract BadBridge is ERC721 {
     function claim(uint32 tokenId) external {
         address to = proven[tokenId];
         if (to == address(0)) revert NotProven(tokenId);
-        // _mint reverts if the token exists, so a second claim can't mint twice. Not _safeMint:
+        // _mint reverts if the token exists, so a second claim can't mint twice. That only holds
+        // because nothing can burn: a burn path would need a claimed flag here. Not _safeMint:
         // a recipient contract without onERC721Received would strand the kid forever.
         _mint(to, tokenId);
+    }
+
+    /// @notice Kids minted so far. Sparse, since only bridged ids exist.
+    function totalSupply() external view returns (uint256) {
+        return _getTotalSupply();
+    }
+
+    function clock() public view override returns (uint48) {
+        return uint48(block.timestamp);
+    }
+
+    // solhint-disable-next-line func-name-mixedcase
+    function CLOCK_MODE() public pure override returns (string memory) {
+        return "mode=timestamp";
+    }
+
+    /// @dev Unset means self, so holders vote without sending a delegate tx first (Nouns-style).
+    function delegates(address account) public view override returns (address) {
+        address delegatee = super.delegates(account);
+        return delegatee == address(0) ? account : delegatee;
+    }
+
+    /// @dev delegate(0) would move votes to address(0) while delegates() still reports self. Map it to self.
+    function _delegate(address account, address delegatee) internal override {
+        super._delegate(account, delegatee == address(0) ? account : delegatee);
     }
 
     /// @dev Whole attack surface. Path must be exactly ["wasm", 0x03 || ESCROW || "b" || u32 BE] with a 20-byte value.
@@ -153,5 +183,17 @@ contract BadBridge is ERC721 {
 
     function _baseURI() internal view override returns (string memory) {
         return baseURI;
+    }
+
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721, ERC721Votes)
+        returns (address)
+    {
+        return super._update(to, tokenId, auth);
+    }
+
+    function _increaseBalance(address account, uint128 amount) internal override(ERC721, ERC721Votes) {
+        super._increaseBalance(account, amount);
     }
 }
