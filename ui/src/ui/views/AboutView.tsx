@@ -7,6 +7,7 @@ import { useClaimEstimate, useConfigSanity, useHealth, useNudge, useTrustFacts, 
 import { formatEth } from '../Claim'
 import { Card } from '../chrome/Card'
 import { ConnectButton } from '../Connect'
+import { CostList } from '../CostList'
 import { ErrorNote } from '../ErrorNote'
 import { errorCopy } from '../errors'
 import { ExtLink } from '../ExtLink'
@@ -75,6 +76,9 @@ export function AboutView() {
 
         <h3>Why you can trust it</h3>
         <TrustList facts={facts} failed={trust.error !== null} />
+
+        <h3>What it costs</h3>
+        <CostList />
 
         <h3>Good to know</h3>
         <div className="faq">

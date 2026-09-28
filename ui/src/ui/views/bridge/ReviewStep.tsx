@@ -8,6 +8,7 @@ import { sharedHost } from '../../../config/host'
 import { navigate } from '../../../router'
 import { useConfigSanity, useHealth, useSendEstimate, useSendKids } from '../../../trips/hooks'
 import { ConnectButton } from '../../Connect'
+import { CostList } from '../../CostList'
 import { ErrorNote } from '../../ErrorNote'
 import { errorCopy } from '../../errors'
 import { formatFee, kidWord } from '../../format'
@@ -261,6 +262,8 @@ export function ReviewStep() {
         <ErrorNote error={contract.error} action="read" onRetry={contract.refetch} retryLabel="Check the address again" />
       )}
 
+      <CostList />
+
       <div className="warn">
         <WarnIcon />
         <div>
@@ -295,7 +298,7 @@ export function ReviewStep() {
           />
           {mightHaveLanded && (
             <p className="hint">
-              Before sending again, check <a href="#/kids">My kids</a> in case it went through.
+              Before sending again, check <a href="#/crossing">Crossing</a> in case it went through.
             </p>
           )}
         </>

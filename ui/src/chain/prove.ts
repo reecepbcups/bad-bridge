@@ -13,13 +13,14 @@ import { readContract } from 'viem/actions'
 import type { Deployment } from '../config/deployments'
 import { bridgeAbi, lightClientAbi } from './eth/abi'
 import { createEthPublicClient } from './eth/client'
+import { MIN_DEPOSIT } from './eth/fundProve'
 import { requireBridge } from './eth/reader'
 import type { EthWriterWithBatch } from './eth/writer'
 import { escrowRaw, proofHeader, proveAt, storeKey } from './hub/prove'
 import { encodeSp1Stdin, stdinChunks, type StdinRecord } from './hub/stdin'
 import { createTransport } from './hub/transport'
 import { getProveBalance, waitForProof, type ProofRequestProgress, type SuccinctStage } from './succinct/client'
-import { BridgeError, type EthAddress, type KidId } from './types'
+import { BridgeError, type BatchOptions, type EthAddress, type KidId } from './types'
 
 export type ProveStage = 'finding-proof' | SuccinctStage | 'signing' | 'confirming'
 
@@ -106,7 +107,17 @@ export interface ProveKidWriter {
    * whoever built the program. A no-op if it's already registered.
    */
   registerProgram(): Promise<void>
+  /** ETH for exactly `prove` PROVE (18 decimals) on Uniswap right now. */
+  quoteProve(prove: bigint): Promise<bigint>
+  /** PROVE sitting in the wallet, waiting to be deposited. */
+  walletProveBalance(): Promise<bigint>
+  /** Buys exactly `prove` PROVE with ETH, into the wallet. */
+  buyProve(prove: bigint, options?: BatchOptions): Promise<Hex>
+  /** Moves PROVE from the wallet into its Succinct network account. */
+  depositProve(amount: bigint, options?: BatchOptions): Promise<Hex>
 }
+
+export { MIN_DEPOSIT }
 
 export function createProveKidWriter(deployment: Deployment, ethWriter: EthWriterWithBatch): ProveKidWriter {
   const publicClient = createEthPublicClient(deployment)
@@ -198,5 +209,15 @@ export function createProveKidWriter(deployment: Deployment, ethWriter: EthWrite
     await ethWriter.registerProgram(MEMBERSHIP_NETWORK_VK_HASH, fromBase64(MEMBERSHIP_VK_BASE64), elf)
   }
 
-  return { proveKid, proveKids, submitRequest, proveBalance: () => getProveBalance(ethWriter.address), registerProgram }
+  return {
+    proveKid,
+    proveKids,
+    submitRequest,
+    proveBalance: () => getProveBalance(ethWriter.address),
+    registerProgram,
+    quoteProve: (prove) => ethWriter.quoteProve(prove),
+    walletProveBalance: () => ethWriter.walletProveBalance(),
+    buyProve: (prove, options) => ethWriter.swapEthForProve(prove, options),
+    depositProve: (amount, options) => ethWriter.depositProve(amount, options),
+  }
 }

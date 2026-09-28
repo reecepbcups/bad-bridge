@@ -7,6 +7,7 @@ import type { Hex } from 'viem'
 import { ConnectButton } from './Connect'
 import { ErrorNote } from './ErrorNote'
 import { ExtLink } from './ExtLink'
+import { GetProveButton } from './GetProve'
 import { kidList } from './format'
 import { Sheet } from './Sheet'
 import { useToast, type Toast } from './Toasts'
@@ -37,9 +38,6 @@ export function ProveProgress({ flow }: { flow: ProveFlow }) {
     </p>
   )
 }
-
-/** Where the connected wallet manages its Succinct network PROVE balance. */
-const PROVE_ACCOUNT_URL = 'https://explorer.succinct.xyz/account'
 
 /** The toast once one or more kids' proofs land on Ethereum. `ids` is whichever ones actually made it into
  * the batch (see ProveKidsResult.proved) — can be fewer than what was asked for. */
@@ -234,7 +232,7 @@ export function ProveBalanceNote() {
   return (
     <p className="hint">
       Proving costs a little $PROVE on Succinct's network — looks like this wallet doesn't have any yet.{' '}
-      <ExtLink href={PROVE_ACCOUNT_URL}>Get PROVE</ExtLink>
+      <GetProveButton />
     </p>
   )
 }
