@@ -40,12 +40,16 @@ function pushString(out: number[], field: number, s: string): void {
   pushBytes(out, field, new TextEncoder().encode(s))
 }
 
+// proto3 omits default values, and the server re-encodes the body canonically before recovering the signer
+// from the signature, so a body with explicit zeros recovers to a random address.
 function pushUint64(out: number[], field: number, n: bigint): void {
+  if (n === 0n) return
   pushTag(out, field, 0)
   pushVarintBig(out, n)
 }
 
 function pushEnum(out: number[], field: number, n: number): void {
+  if (n === 0) return
   pushTag(out, field, 0)
   pushVarint(out, n)
 }

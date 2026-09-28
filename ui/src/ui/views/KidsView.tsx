@@ -12,7 +12,7 @@ import { dateTime, kidWord, shortAddress, timeAgo } from '../format'
 import { useFocusWhenDone, useHubNow } from '../hooks'
 import { KidArt, KidDoodle } from '../KidArt'
 import { parseLookup, type Lookup } from '../lookup'
-import { ProveButton, ProveFailure, useProveFlow, type ProveFlow } from '../ProveKid'
+import { ProveBalanceNote, ProveButton, ProveFailure, useProveFlow, type ProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { SpeedUp } from '../SpeedUp'
 import { StageList, TrackBar } from '../StageList'
@@ -154,6 +154,7 @@ export function KidsView({ address }: { address?: string }) {
               </ProveButton>
             )}
           </div>
+          {!deployment.demo && provingTrips.length > 0 && <ProveBalanceNote />}
           {crossing > 0 && crossingRecipient && (
             <SpeedUp
               recipient={crossingRecipient}
