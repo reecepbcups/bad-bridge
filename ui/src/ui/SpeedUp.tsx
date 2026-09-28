@@ -26,7 +26,17 @@ function skipExplorerUrl(chainId: string, txHash: string): string {
  * updates Ethereum's light client. A nudge, not a guarantee: it doesn't skip proving, and nothing here promises
  * it'll actually go faster.
  */
-export function SpeedUp({ recipient, n }: { recipient: EthAddress; n: number }) {
+export function SpeedUp({
+  recipient,
+  n,
+  disabledReason,
+}: {
+  recipient: EthAddress
+  n: number
+  /** Set when nudging can't help right now (e.g. Ethereum's light client already caught up to every kid in
+   * flight): grays the button out with this as the explanation, instead of hiding it outright. */
+  disabledReason?: string
+}) {
   const { deployment, hubWallet } = useBridge()
   const toast = useToast()
   const [reached, setReached] = useState<SendStage | null>(null)
@@ -34,6 +44,17 @@ export function SpeedUp({ recipient, n }: { recipient: EthAddress; n: number }) 
   const sending = nudge.status === 'pending'
   const walletName = hubWallet.walletName ?? 'your wallet'
   const stage: SendStage | null = sending ? (nudge.stage ?? 'simulating') : null
+
+  if (disabledReason) {
+    return (
+      <div className="speed-up">
+        <button type="button" className="btn ghost small" disabled aria-disabled="true">
+          Speed it up
+        </button>
+        <p className="hint">{disabledReason}</p>
+      </div>
+    )
+  }
 
   if (hubWallet.status !== 'connected') {
     return (

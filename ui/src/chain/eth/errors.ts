@@ -122,6 +122,9 @@ export function revertToBridgeError(revert: BridgeRevert, tokenId?: KidId, cause
     // _mint on a token that exists: someone claimed it first
     case 'ERC721InvalidSender':
       return new BridgeError('AlreadyBridged', `kid${tokenId === undefined ? '' : ` #${tokenId}`} is already minted`, { tokenId, cause })
+    // submitBatch: the light client can't verify anything new until it's un-frozen
+    case 'ClientFrozen':
+      return new BridgeError('ClientFrozen', "Ethereum's light client of the Hub is frozen", { tokenId, cause })
     default:
       return new BridgeError('Unknown', `bridge reverted with ${revert.errorName}`, { tokenId, cause })
   }

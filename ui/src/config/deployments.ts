@@ -53,6 +53,8 @@ export interface Explorers {
   ethToken(tokenId: number): string | null
   /** OpenSea page for one bridged kid. null until the bridge exists. */
   opensea(tokenId: number): string | null
+  /** OpenSea collection page for the bridged contract. null until the bridge exists. */
+  openseaCollection(): string | null
 }
 
 export interface Deployment {
@@ -92,6 +94,7 @@ function explorers(bridge: Address | null): Explorers {
     ethAddress: (address) => `https://etherscan.io/address/${address}`,
     ethToken: (tokenId) => (bridge ? `https://etherscan.io/nft/${bridge}/${tokenId}` : null),
     opensea: (tokenId) => (bridge ? `https://opensea.io/assets/ethereum/${bridge}/${tokenId}` : null),
+    openseaCollection: () => (bridge ? `https://opensea.io/assets/ethereum/${bridge}` : null),
   }
 }
 
@@ -125,11 +128,11 @@ const SOURCE = 'https://github.com/reecepbcups/bad-bridge'
 
 const REECE_TEST_BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
 
-/** Mainnet test collection: #2 and #3 already bridged, #1 still on the Hub. */
+/** Mainnet test collection. Minted up to #18 as of 2026-09-28 (cw721 num_tokens/all_tokens, verified live); grows as more get minted for testing. */
 const reeceTest: Deployment = {
   id: 'reece-test',
   collectionName: 'ReeceBadTest',
-  collectionSize: 3,
+  collectionSize: 18,
   demo: false,
   hub: hub(
     'cosmos158d2rz0aw8cxx86j0tl8gfwleqyqefr9xdgth2jdfse2d9uumltsu83rfr',

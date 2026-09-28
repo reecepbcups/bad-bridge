@@ -12,17 +12,26 @@ const FORGE_FUNCTIONS: Record<string, string> = {
   'lightClient()': '0xb5700e68',
   'ownerOf(uint256)': '0x6352211e',
   'proven(uint32)': '0xec703b2c',
+  'submitBatch(uint64,(uint128,bytes32,bytes32),(bytes32,bytes,bytes))': '0x76b1905c',
 }
 const FORGE_ERRORS: Record<string, string> = {
   'NotProven(uint32)': '0x713871e1',
   'ClientFrozen()': '0x59869f4e',
+  'BadConsensusState()': '0x198d4204',
+  'BadVKey()': '0xe2aad271',
+  'RootMismatch()': '0x5ade0455',
+  'BadPath(uint256)': '0xbbfe13b9',
   'ERC721NonexistentToken(uint256)': '0x7e273289',
   'ERC721InvalidSender(address)': '0x73c6ac6e',
   'ERC721InvalidReceiver(address)': '0x64a0ae92',
 }
 
-type Item = { type: string; name?: string; inputs?: readonly { type: string }[] }
-const signature = (item: Item) => `${item.name}(${(item.inputs ?? []).map((i) => i.type).join(',')})`
+type Input = { type: string; components?: readonly Input[] }
+type Item = { type: string; name?: string; inputs?: readonly Input[] }
+// Struct params report type "tuple"/"tuple[]"; expand to the canonical (t1,t2,...) form forge prints.
+const typeOf = (input: Input): string =>
+  input.type.startsWith('tuple') ? `(${(input.components ?? []).map(typeOf).join(',')})${input.type.slice('tuple'.length)}` : input.type
+const signature = (item: Item) => `${item.name}(${(item.inputs ?? []).map(typeOf).join(',')})`
 const selectors = (items: readonly Item[]) => Object.fromEntries(items.map((x) => [signature(x), toFunctionSelector(signature(x))]))
 
 describe('abi', () => {
@@ -31,8 +40,13 @@ describe('abi', () => {
     expect(selectors(bridgeAbi.filter((x) => x.type === 'error'))).toEqual(FORGE_ERRORS)
   })
 
-  it('has the ISP1ICS07Tendermint clientState() and Multicall3 aggregate3 selectors', () => {
-    expect(toFunctionSelector(lightClientAbi.find((x) => x.type === 'function')!)).toBe('0xbd3ce6b0')
+  it('has the ISP1ICS07Tendermint clientState()/getConsensusStateHash()/MEMBERSHIP_PROGRAM_VKEY() and Multicall3 aggregate3 selectors', () => {
+    const lightClientFns = Object.fromEntries(lightClientAbi.filter((x) => x.type === 'function').map((x) => [x.name, toFunctionSelector(x)]))
+    expect(lightClientFns).toEqual({
+      clientState: '0xbd3ce6b0',
+      getConsensusStateHash: '0x23842fb8',
+      MEMBERSHIP_PROGRAM_VKEY: '0xe45a6d0d',
+    })
     expect(toFunctionSelector(multicall3WriteAbi.find((x) => x.type === 'function')!)).toBe('0x82ad56cb')
   })
 

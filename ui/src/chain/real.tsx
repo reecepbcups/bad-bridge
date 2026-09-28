@@ -3,7 +3,9 @@ import type { Deployment } from '../config/deployments'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { BridgeContext, type BridgeContextValue } from './context'
 import { createEthReader } from './eth/reader'
+import type { EthWriterWithBatch } from './eth/writer'
 import { createHubReader } from './hub/reader'
+import { createProveKidWriter } from './prove'
 import { BridgeError, type WalletState } from './types'
 import type { Wallets } from './wallets'
 
@@ -33,7 +35,13 @@ export default function RealBridgeProvider({ deployment, children }: { deploymen
   const eth = useMemo(() => createEthReader(deployment), [deployment])
   const [wallets, setWallets] = useState<Wallets>(LOADING)
   const onWallets = useCallback((next: Wallets) => setWallets(next), [])
-  const value = useMemo<BridgeContextValue>(() => ({ deployment, hub, eth, ...wallets }), [deployment, hub, eth, wallets])
+  // createEthWriter always returns an EthWriterWithBatch; the EthWriter interface just doesn't say so, since
+  // not every consumer of an EthWriter needs submitBatch/requestGroth16Proof.
+  const proveKid = useMemo(
+    () => (wallets.ethWriter ? createProveKidWriter(deployment, wallets.ethWriter as EthWriterWithBatch) : null),
+    [deployment, wallets.ethWriter],
+  )
+  const value = useMemo<BridgeContextValue>(() => ({ deployment, hub, eth, ...wallets, proveKid }), [deployment, hub, eth, wallets, proveKid])
   return (
     <>
       {/* a sibling, not a parent: when it arrives, nothing below re-mounts */}

@@ -251,6 +251,7 @@ export function fakeBridge(
     ethWallet: wallet<EthAddress>(ethWriter?.address),
     hubWriter,
     ethWriter,
+    proveKid: null,
   }
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>

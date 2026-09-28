@@ -47,6 +47,9 @@ importers:
       '@fontsource/nunito':
         specifier: 5.3.0
         version: 5.3.0
+      '@oneidentity/zstd-js':
+        specifier: 1.0.3
+        version: 1.0.3
       '@tanstack/react-query':
         specifier: 5.104.0
         version: 5.104.0(react@19.3.0)
@@ -703,6 +706,9 @@ packages:
     resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
     engines: {node: '>= 20.19.0'}
 
+  '@oneidentity/zstd-js@1.0.3':
+    resolution: {integrity: sha512-Jm6sawqxLzBrjC4sg2BeXToa33yPzUmq20CKsehKY2++D/gHb/oSwVjNgT+RH4vys+r8FynrgcNzGwhZWMLzfQ==}
+
   '@oxc-project/types@0.151.0':
     resolution: {integrity: sha512-J1yXrIlNDZVzE3ada310xeAw7nH8yCAyLPuUIsjKatFPmfn5bS1oW+cM+QsGOtVWd5nhSpbwZWx/rue+r5Z+PA==}
 
@@ -1345,6 +1351,9 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+
+  '@types/emscripten@1.41.6':
+    resolution: {integrity: sha512-uN+9i8bFT5CUcZfyIEYDrSueACEyKGbUs5kC/72DGlZZoinh84sJfVV0i8UOJD1asdzkvLPBRrKs41kZ8MdEXg==}
 
   '@types/esrecurse@4.3.1':
     resolution: {integrity: sha512-xJBAbDifo5hpffDBuHl0Y8ywswbiAp/Wi7Y/GtAgSlZyIABppyurxVueOPE8LUQOxdlgi6Zqce7uoEpqNTeiUw==}
@@ -3169,7 +3178,6 @@ packages:
   starknet@8.9.2:
     resolution: {integrity: sha512-+dp+o2w67fV6JyVOVkYeM1Ec71aORHc/JrF4VHLlfeGee0nLilooCQLE2u6hUcSGQG2x2/fvzkxYpIN+k1JBvA==}
     engines: {node: '>=22'}
-    deprecated: starknet <10 is end-of-life and no longer receives security fixes. Upgrade to starknet@10 (10.8.0 or later).
 
   std-env@4.2.0:
     resolution: {integrity: sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==}
@@ -4622,6 +4630,10 @@ snapshots:
 
   '@noble/hashes@2.4.0': {}
 
+  '@oneidentity/zstd-js@1.0.3':
+    dependencies:
+      '@types/emscripten': 1.41.6
+
   '@oxc-project/types@0.151.0': {}
 
   '@paulmillr/qr@0.2.1': {}
@@ -5524,6 +5536,8 @@ snapshots:
       '@types/ms': 2.1.0
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/emscripten@1.41.6': {}
 
   '@types/esrecurse@4.3.1': {}
 

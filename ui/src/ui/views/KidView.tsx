@@ -11,6 +11,7 @@ import { blockNumber, dateTime, shortAddress, shortHash } from '../format'
 import { useFocusWhenDone } from '../hooks'
 import { KidArt } from '../KidArt'
 import { isKidId } from '../lookup'
+import { ProveBalanceNote, ProveButton, ProveFailure, ProveProgress, useProveFlow } from '../ProveKid'
 import { ShareLink } from '../ShareLink'
 import { StageList } from '../StageList'
 import { STAGE_PILL } from '../stages'
@@ -56,6 +57,7 @@ function Kid({ id }: { id: KidId }) {
   const trip = useTrip(id)
   const health = useHealth()
   const claim = useClaimFlow()
+  const prove = useProveFlow()
   const heading = useRef<HTMLHeadingElement>(null)
   const t = trip.data
   // claimed here: the Claim button goes away when it lands
@@ -112,6 +114,18 @@ function Kid({ id }: { id: KidId }) {
           )}
           {t.stage === 'ready' && ethWallet.wrongChain && <SwitchChain />}
           {claim.failure && <ErrorNote error={claim.failure.error} action="claim" walletName={ethWallet.walletName} tokenId={id} />}
+          {!deployment.demo && t.stage === 'proving' && (
+            <div className="row start">
+              <ProveButton ids={[id]} expectedRecipients={t.recipient ? new Map([[id, t.recipient]]) : undefined} flow={prove}>
+                Prove it yourself
+              </ProveButton>
+              <span className="hint">Normally the batcher proves it for you. This does it now, from your wallet.</span>
+            </div>
+          )}
+          {!deployment.demo && t.stage === 'proving' && <ProveBalanceNote />}
+          {t.stage === 'proving' && ethWallet.wrongChain && <SwitchChain />}
+          <ProveProgress flow={prove} />
+          <ProveFailure flow={prove} />
           {sent && <StageList facts={t} health={health.data} />}
 
           <dl className="facts">

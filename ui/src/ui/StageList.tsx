@@ -84,18 +84,26 @@ export function StageList({
     },
     {
       detail: 'A prover shows Ethereum the kid left the Hub. Nobody has to trust it.',
-      live: facts.stuck ? (
-        <>
-          {one ? 'This kid is' : 'Your kids are'} safe in the escrow and will cross when a prover picks {one ? 'it' : 'them'} up.
-          Nothing to do but wait.{' '}
-          <span className="secondary">
-            Or <ExtLink href={`${deployment.sourceUrl}#readme`}>run a prover yourself</ExtLink>
-          </span>
-          {/* COPY: stuck prover note */}
-        </>
-      ) : (
-        provingSeen(facts.provingSince, now)
-      ),
+      live: (() => {
+        const seen = provingSeen(facts.provingSince, now)
+        if (!seen) return null
+        return (
+          <>
+            {seen}{' '}
+            {facts.stuck && (
+              <>
+                {one ? 'This kid is' : 'Your kids are'} safe in the escrow and will cross when a prover picks {one ? 'it' : 'them'} up.{' '}
+              </>
+            )}
+            {!deployment.demo && (
+              <span className="secondary">
+                {facts.stuck ? 'Or use' : 'You can use'} "Prove it yourself" above to do it now, from your wallet.
+              </span>
+            )}
+            {/* COPY: proving-for-a-while note */}
+          </>
+        )
+      })(),
     },
     {
       detail: 'Anyone can claim it, and it always lands at the address it was sent to.',

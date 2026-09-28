@@ -238,6 +238,10 @@ export class FakeChain {
         if (commit) this.owners.set(id, to)
         return { ok: true, data: '0x' }
       }
+      case 'submitBatch':
+        // Not simulated: no test here exercises submitBatch yet. Kept as a no-op success case only so this
+        // switch stays exhaustive over bridgeAbi's functionName union.
+        return { ok: true, data: '0x' }
     }
   }
 }

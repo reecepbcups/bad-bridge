@@ -10,13 +10,20 @@ import type { Deployment } from '../../config/deployments'
 import {
   BridgeError,
   stageReporter,
+  type BatchOptions,
+  type BatchStage,
   type ClaimResult,
   type ClaimStage,
+  type ConsensusStateArgs,
   type EthAddress,
   type EthReader,
   type EthWriter,
   type KidId,
+  type Sp1ProofArgs,
+  type SubmitBatchResult,
 } from '../types'
+import { registerProgram as registerProgramImpl, requestGroth16Proof as requestGroth16ProofImpl, type ProofRequestProgress, type SuccinctStage } from '../succinct/client'
+import type { DecodedGroth16Proof } from '../succinct/proof'
 import { bridgeAbi, multicall3WriteAbi } from './abi'
 import { ethChain } from './client'
 import { decodeRevert, revertToBridgeError, toEthError } from './errors'
@@ -54,6 +61,31 @@ export type EthWriterDeps = {
 
 /** Progress for one claim; `signing` goes out just before the wallet is asked. */
 type Report = (stage: ClaimStage) => void
+/** Progress for one submitBatch call. */
+type BatchReport = (stage: BatchStage) => void
+
+/** An EthWriter that also carries submitBatch and requestGroth16Proof, for the proof page (createEthWriter returns this). */
+export interface EthWriterWithBatch extends EthWriter {
+  /**
+   * Anyone can submit a batch (it's checked on-chain, not by msg.sender) — this always uses the connected
+   * wallet, same as claim. `options.onStage` reports signing → confirming.
+   */
+  submitBatch(proofHeight: bigint, cs: ConsensusStateArgs, sp1Proof: Sp1ProofArgs, options?: BatchOptions): Promise<SubmitBatchResult>
+  /**
+   * Requests a Groth16 membership proof from Succinct's network, signing with the same connected wallet
+   * that would submitBatch it. The wallet client stays inside this module — callers never see it.
+   */
+  requestGroth16Proof(vkHash: Hex, stdinBytes: Uint8Array, options?: {
+      onStage?: (stage: SuccinctStage) => void
+      onProgress?: (progress: ProofRequestProgress) => void
+    },
+  ): Promise<DecodedGroth16Proof>
+  /**
+   * Registers a guest program on Succinct's network (a no-op if it's already registered), signing with the
+   * same connected wallet. Anyone can register any program — this isn't gated to whoever built it.
+   */
+  registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void>
+}
 
 /** Splits requested ids into what can be claimed now, and why the rest can't. */
 export function sortClaimable(ids: readonly KidId[], status: Map<KidId, { proven: unknown; owner: unknown }>) {
@@ -91,7 +123,7 @@ function nothingToClaim(minted: readonly KidId[], unproven: readonly KidId[]): B
  * 4. simulates, sends, waits for the receipt and fails if it reverted.
  * `onStage` hears `signing` right before the wallet is asked, and `confirming` once the tx is sent.
  */
-export function createEthWriter(deps: EthWriterDeps): EthWriter {
+export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
   const { deployment, publicClient } = deps
   const reader = deps.reader ?? createEthReader(deployment, { client: publicClient })
   const address = 'walletClient' in deps ? deps.walletClient.account.address : deps.address
@@ -106,6 +138,25 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
       abi: bridgeAbi,
       functionName: 'claim',
       args: [id],
+    })
+    report('signing')
+    return writeContract(wallet, { ...request, account: wallet.account, chain })
+  }
+
+  async function submitBatchTx(
+    wallet: SignerClient,
+    bridge: Address,
+    proofHeight: bigint,
+    cs: ConsensusStateArgs,
+    sp1Proof: Sp1ProofArgs,
+    report: BatchReport,
+  ): Promise<Hex> {
+    const { request } = await simulateContract(publicClient, {
+      account: wallet.account,
+      address: bridge,
+      abi: bridgeAbi,
+      functionName: 'submitBatch',
+      args: [proofHeight, cs, sp1Proof],
     })
     report('signing')
     return writeContract(wallet, { ...request, account: wallet.account, chain })
@@ -189,6 +240,44 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
     return { txHash: receipt.transactionHash, claimed }
   }
 
+  async function submitBatch(proofHeight: bigint, cs: ConsensusStateArgs, sp1Proof: Sp1ProofArgs, report: BatchReport): Promise<SubmitBatchResult> {
+    const bridge = requireBridge(deployment)
+    const wallet = await getWallet()
+    const walletChain = await getChainId(wallet)
+    if (walletChain !== chain.id) {
+      throw new BridgeError('WrongChain', `wallet is on chain ${walletChain}, the bridge is on ${chain.name} (${chain.id})`)
+    }
+
+    const hash = await submitBatchTx(wallet, bridge, proofHeight, cs, sp1Proof, report)
+    report('confirming')
+    let cancelled = false
+    const receipt = await waitForTransactionReceipt(publicClient, {
+      hash,
+      timeout: RECEIPT_TIMEOUT_MS,
+      onReplaced: (r) => {
+        cancelled = r.reason === 'cancelled'
+      },
+    })
+    if (cancelled) throw new BridgeError('UserRejected', `submitBatch ${hash} was cancelled in the wallet`)
+    if (receipt.status !== 'success') throw new BridgeError('Unknown', `submitBatch transaction ${receipt.transactionHash} reverted`)
+    return { txHash: receipt.transactionHash }
+  }
+
+  async function requestGroth16Proof(
+    vkHash: Hex,
+    stdinBytes: Uint8Array,
+    onStage: ((stage: SuccinctStage) => void) | undefined,
+    onProgress: ((progress: ProofRequestProgress) => void) | undefined,
+  ): Promise<DecodedGroth16Proof> {
+    const wallet = await getWallet()
+    return requestGroth16ProofImpl({ wallet, vkHash, stdinBytes, onStage, onProgress })
+  }
+
+  async function registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void> {
+    const wallet = await getWallet()
+    await registerProgramImpl({ wallet, vkHash, vk, elf })
+  }
+
   return {
     address,
     claim: async (ids, options) => {
@@ -199,6 +288,30 @@ export function createEthWriter(deps: EthWriterDeps): EthWriter {
         throw toEthError(e, ids.length === 1 ? ids[0] : undefined)
       } finally {
         stage.done()
+      }
+    },
+    submitBatch: async (proofHeight, cs, sp1Proof, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        return await submitBatch(proofHeight, cs, sp1Proof, stage.report)
+      } catch (e) {
+        throw toEthError(e)
+      } finally {
+        stage.done()
+      }
+    },
+    requestGroth16Proof: async (vkHash, stdinBytes, options) => {
+      try {
+        return await requestGroth16Proof(vkHash, stdinBytes, options?.onStage, options?.onProgress)
+      } catch (e) {
+        throw toEthError(e)
+      }
+    },
+    registerProgram: async (vkHash, vk, elf) => {
+      try {
+        return await registerProgram(vkHash, vk, elf)
+      } catch (e) {
+        throw toEthError(e)
       }
     },
   }

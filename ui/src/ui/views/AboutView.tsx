@@ -1,15 +1,19 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useBridge } from '../../chain/context'
 import { CLAIM_GAS_EXTRA } from '../../chain/eth/gas'
-import { MAX_KIDS_PER_SEND, type HubAddress } from '../../chain/types'
+import { MAX_KIDS_PER_SEND, type HubAddress, type SendStage } from '../../chain/types'
 import { isLive } from '../../config/deployments'
-import { useClaimEstimate, useConfigSanity, useHealth, useTrustFacts, type TrustFacts } from '../../trips/hooks'
+import { useClaimEstimate, useConfigSanity, useHealth, useNudge, useTrustFacts, type TrustFacts } from '../../trips/hooks'
 import { formatEth } from '../Claim'
 import { Card } from '../chrome/Card'
+import { ConnectButton } from '../Connect'
+import { ErrorNote } from '../ErrorNote'
+import { errorCopy } from '../errors'
 import { ExtLink } from '../ExtLink'
 import { aboutMinutes, blockNumber, shortAddress } from '../format'
 import { useChangedAt, useWallClock } from '../hooks'
 import { KidArt } from '../KidArt'
+import { useToast } from '../Toasts'
 import { useTitle } from '../useTitle'
 import './about.css'
 
@@ -174,6 +178,14 @@ export function AboutView() {
               <span className="muted">not live yet</span>
             )}
           </dd>
+          <dt>OpenSea</dt>
+          <dd>
+            {explorer.openseaCollection() ? (
+              <ExtLink href={explorer.openseaCollection() as string}>{deployment.collectionName}</ExtLink>
+            ) : (
+              <span className="muted">not live yet</span>
+            )}
+          </dd>
           <dt>Hub light client (Ethereum)</dt>
           <dd>
             <ExtLink className="mono" href={explorer.ethAddress(eth.lightClient)}>
@@ -333,26 +345,107 @@ function HealthStrip() {
   }
   const ago = checkedAt === null ? 'just now' : Math.max(0, now - checkedAt) < 60_000 ? 'just now' : `${Math.round((now - checkedAt) / 60_000)} min ago`
   return (
-    <div className="health" aria-label="Bridge health">
-      <span className={h.frozen ? 'dot bad' : 'dot ok'} aria-hidden="true" />
-      <span>
-        <b>{h.frozen ? 'Stuck' : 'Running'}</b>
-        {h.frozen ? ": Ethereum has stopped accepting updates from the Hub, so new kids can't cross for now." : '.'}
-      </span>
-      <span>
-        {health.error
-          ? "Couldn't check just now, so these numbers may be old."
-          : h.stale
-            ? 'Ethereum is a long way behind the Hub right now.'
-            : `Ethereum is ${aboutMinutes(h.lagMinutes)} behind the Hub`}
-        <span className="muted mono"> ({blockNumber(h.lagBlocks)} blocks)</span>
-        {/* COPY: health strip */}
-      </span>
-      <span className="muted heights">
-        Hub block <span className="mono">{blockNumber(h.hubHeight)}</span> · Ethereum has seen{' '}
-        <span className="mono">{blockNumber(h.clientHeight)}</span>
-      </span>
-      {!health.error && <span className="muted">checked {ago}</span>}
+    <>
+      <div className="health" aria-label="Bridge health">
+        <span className={h.frozen ? 'dot bad' : 'dot ok'} aria-hidden="true" />
+        <span>
+          <b>{h.frozen ? 'Stuck' : 'Running'}</b>
+          {h.frozen ? ": Ethereum has stopped accepting updates from the Hub, so new kids can't cross for now." : '.'}
+        </span>
+        <span>
+          {health.error
+            ? "Couldn't check just now, so these numbers may be old."
+            : h.stale
+              ? 'Ethereum is a long way behind the Hub right now.'
+              : `Ethereum is ${aboutMinutes(h.lagMinutes)} behind the Hub`}
+          <span className="muted mono"> ({blockNumber(h.lagBlocks)} blocks)</span>
+          {/* COPY: health strip */}
+        </span>
+        <span className="muted heights">
+          Hub block <span className="mono">{blockNumber(h.hubHeight)}</span> · Ethereum has seen{' '}
+          <span className="mono">{blockNumber(h.clientHeight)}</span>
+        </span>
+        {!health.error && <span className="muted">checked {ago}</span>}
+      </div>
+      {!h.frozen && h.lagBlocks > 0 && <UpdateClient />}
+    </>
+  )
+}
+
+// COPY: update-client progress (button labels while a nudge send runs)
+const UPDATE_LABEL: Readonly<Record<SendStage, (wallet: string) => string>> = {
+  simulating: () => 'Checking…',
+  signing: (wallet) => `Check ${wallet}…`,
+  broadcasting: () => 'Sending…',
+}
+
+/**
+ * Same nudge as the crossing screen's "Speed it up" (a small ATOM transfer that relayers watch for), offered
+ * here as a general "make Ethereum catch up" action: sends to the connected Ethereum wallet's own address.
+ */
+function UpdateClient() {
+  const { deployment, hubWallet, ethWallet } = useBridge()
+  const toast = useToast()
+  const [reached, setReached] = useState<SendStage | null>(null)
+  const nudge = useNudge({ onStage: setReached })
+  const sending = nudge.status === 'pending'
+  const walletName = hubWallet.walletName ?? 'your wallet'
+  const stage: SendStage | null = sending ? (nudge.stage ?? 'simulating') : null
+
+  if (ethWallet.status !== 'connected' || !ethWallet.address) {
+    return (
+      <p className="hint">
+        <ConnectButton chain="eth" className="btn ghost small">
+          Connect Ethereum
+        </ConnectButton>{' '}
+        to update the light client with a small ATOM transfer.
+      </p>
+    )
+  }
+  if (hubWallet.status !== 'connected') {
+    return (
+      <p className="hint">
+        <ConnectButton chain="hub" className="btn ghost small">
+          Connect Cosmos Hub
+        </ConnectButton>{' '}
+        to update the light client with a small ATOM transfer.
+      </p>
+    )
+  }
+
+  const recipient = ethWallet.address
+  const onClick = async () => {
+    if (sending) return
+    setReached(null)
+    try {
+      const result = await nudge.run(recipient)
+      toast({
+        tone: 'ok',
+        title: 'Sent a speed-up transfer',
+        link: { href: `https://explorer.skip.build/?tx_hash=${result.txHash}&chain_id=${deployment.hub.chainId}`, label: 'Track it on Skip Go' },
+      })
+    } catch {
+      // nudge.error has it
+    }
+  }
+  const mightHaveLanded = nudge.error !== null && reached === 'broadcasting' && !errorCopy(nudge.error, { action: 'send' }).safe
+
+  return (
+    <div className="speed-up">
+      <button type="button" className="btn ghost small" disabled={sending} aria-disabled={sending || undefined} onClick={() => void onClick()}>
+        {stage ? UPDATE_LABEL[stage](walletName) : 'Update Client'}
+      </button>
+      <p className="hint">
+        Sends 0.01 ATOM to your own Ethereum address, plus a small network fee. Relayers watch for ATOM transfers
+        like this one, so it can help Ethereum catch up sooner. No guarantees.
+        {/* COPY: update-client hint */}
+      </p>
+      {nudge.error && (
+        <>
+          <ErrorNote error={nudge.error} action="send" walletName={hubWallet.walletName} onRetry={() => void onClick()} retryLabel="Try again" />
+          {mightHaveLanded && <p className="hint">Before trying again, check an explorer in case it went through.</p>}
+        </>
+      )}
     </div>
   )
 }
