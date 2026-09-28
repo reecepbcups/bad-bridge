@@ -4,7 +4,7 @@ import { href, navigate } from '../../router'
 import { POLL_MS, useHealth, useRememberedTrips, useTrips } from '../../trips/hooks'
 import type { EthAddress, KidId } from '../../chain/types'
 import type { Health, Trip, TripQuery } from '../../trips/types'
-import { ClaimButton, claimingHint, useClaimFlow, type ClaimFlow } from '../Claim'
+import { CLAIM_BATCH_CAP, ClaimButton, claimingHint, useClaimFlow, type ClaimFlow } from '../Claim'
 import { Card } from '../chrome/Card'
 import { ErrorNote } from '../ErrorNote'
 import { ExtLink } from '../ExtLink'
@@ -23,10 +23,6 @@ import './tracker.css'
 
 // The tracker: every kid headed to an address (or sent by one), wherever it is on the bridge.
 // #/kids uses the connected wallets plus kids this browser sent; #/kids/<address> looks one address up.
-
-// Cap on ids batched into one "claim all" tx, so a big ready list can't blow the block gas limit.
-// TODO(confirm): 40 is a guess, not measured against real per-mint claim gas cost.
-const CLAIM_BATCH_CAP = 40
 
 export function KidsView({ address }: { address?: string }) {
   const { deployment, hubWallet, ethWallet } = useBridge()

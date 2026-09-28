@@ -7,6 +7,10 @@ import { ConnectButton } from './Connect'
 import { kidList } from './format'
 import { useToast, type Toast } from './Toasts'
 
+// Cap on ids batched into one claim tx, so a big ready list can't blow the block gas limit.
+// TODO(confirm): 40 is a guess, not measured against real per-mint claim gas cost.
+export const CLAIM_BATCH_CAP = 40
+
 /** The toast after any claim, the same everywhere. Kids are listed in the order given. */
 export function claimedToast(ids: readonly KidId[], txHash: string, explorer: Explorers): Toast {
   return {
