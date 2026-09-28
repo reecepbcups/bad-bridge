@@ -33,6 +33,8 @@ import type {
   ConfigSanity,
   Health,
   MutationState,
+  NudgeOptions,
+  NudgeState,
   QueryState,
   SendKidsOptions,
   SendKidsState,
@@ -195,6 +197,32 @@ export function useClaimKids(options?: ClaimKidsOptions): ClaimKidsState {
         // minted either way; the next poll shows it
       }
       return result
+    },
+  })
+  return { ...toMutationState(m), stage: m.status === 'pending' ? stage : null }
+}
+
+/**
+ * The "speed up" nudge: a small ATOM ICS20 transfer from the connected Hub wallet, over the Hub-side Eureka
+ * client for Ethereum (read fresh from the router right before sending, like useSendKids re-reads the light
+ * client). Best effort: it doesn't seed any trip state, since nothing about a kid's trip actually changes until
+ * a relayer notices and updates the client on its own.
+ * `stage` says where a running nudge is (simulating → signing → broadcasting); `options.onStage` hears the same.
+ */
+export function useNudge(options?: NudgeOptions): NudgeState {
+  const { hubWriter, eth } = useBridge()
+  const [stage, setStage] = useState<SendStage | null>(null)
+  const onStage = useLatest(options?.onStage)
+  const m = useMutation({
+    mutationFn: async ([recipient]: [EthAddress]) => {
+      setStage(null)
+      if (!hubWriter) throw new BridgeError('Unknown', 'Hub wallet not connected')
+      const report = (s: SendStage) => {
+        setStage(s)
+        onStage.current?.(s)
+      }
+      const sourceClientId = await eth.hubClientId()
+      return hubWriter.nudge(sourceClientId, recipient, { onStage: report })
     },
   })
   return { ...toMutationState(m), stage: m.status === 'pending' ? stage : null }

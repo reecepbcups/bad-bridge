@@ -2,11 +2,17 @@
 
 import { fromBase64, toBase64 } from '@cosmjs/encoding'
 import type { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx'
+import type { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx'
 import { bytesToHex, getAddress, hexToBytes } from 'viem'
 import { BridgeError, MAX_KIDS_PER_SEND, type EthAddress, type HubAddress, type KidId } from '../types'
 
 export const MAX_U32 = 4_294_967_295
 export const MSG_EXECUTE_CONTRACT = '/cosmwasm.wasm.v1.MsgExecuteContract'
+export const MSG_TRANSFER = '/ibc.applications.transfer.v1.MsgTransfer'
+/** 0.01 ATOM, in uatom: the speed-up nudge's fixed amount. */
+export const NUDGE_AMOUNT_UATOM = '10000'
+/** How long the nudge's MsgTransfer stays valid before the Hub refunds it back to the sender. */
+export const NUDGE_TIMEOUT_MS = 10 * 60_000
 
 /** A kid id as the escrow accepts it on the Hub: a u32 in canonical decimal ("7", never "07" or "+7"). */
 export function parseKidId(s: string): KidId | null {
@@ -86,6 +92,43 @@ export function buildSendMsgs(
     typeUrl: MSG_EXECUTE_CONTRACT,
     value: { sender, contract: cw721, msg: utf8.encode(JSON.stringify(sendNftMsg(escrow, id, recipient))), funds: [] },
   }))
+}
+
+export interface TransferEncodeObject {
+  typeUrl: typeof MSG_TRANSFER
+  value: MsgTransfer
+}
+
+/**
+ * The speed-up nudge: a MsgTransfer of NUDGE_AMOUNT_UATOM to `recipient` over `sourceClientId` (the Hub-side
+ * Eureka client for Ethereum, from EthReader.hubClientId()). `sourceChannel` doubles as the client id for a v2
+ * (Eureka) transfer; `receiver` is the plain 0x address, the form ICS20Transfer.sol expects on the other end.
+ * Encoding is left empty (the transfer module defaults empty to `application/json`, the only encoding a v2
+ * transfer supports besides protobuf).
+ *
+ * timeoutTimestamp is unix *seconds*, not the nanoseconds the field's proto doc describes: that's the v1
+ * meaning, but transferV2Packet (ibc-go's apps/transfer/keeper/msg_server.go) hands the same uint64 straight to
+ * channel/v2's sendPacket, which reads it with time.Unix(timeoutTimestamp, 0) and refuses anything more than
+ * 24h out (ErrInvalidTimeout: "timeout exceeds the maximum expected value"). Nanoseconds here reads as an
+ * absurdly far-future timestamp and hits that ceiling. Times out after NUDGE_TIMEOUT_MS and refunds like any
+ * IBC transfer.
+ */
+export function buildNudgeMsg(sender: HubAddress, sourceClientId: string, denom: string, recipient: string, nowMs: number): TransferEncodeObject {
+  recipientBytes(recipient) // same validation as a kid send: 20 bytes, checksum, not the zero address
+  return {
+    typeUrl: MSG_TRANSFER,
+    value: {
+      sourcePort: 'transfer',
+      sourceChannel: sourceClientId,
+      token: { denom, amount: NUDGE_AMOUNT_UATOM },
+      sender,
+      receiver: recipient,
+      timeoutHeight: { revisionNumber: 0n, revisionHeight: 0n },
+      timeoutTimestamp: BigInt(Math.floor((nowMs + NUDGE_TIMEOUT_MS) / 1000)),
+      memo: '',
+      encoding: '',
+    },
+  }
 }
 
 /** 20-byte hex from the escrow (record, pending, eth_recipient), checksummed. null if it isn't exactly that. */

@@ -39,6 +39,8 @@ const ETH_OPTIONS: WalletOption[] = [
  */
 const DEMO_COLLECTION_ADMIN = 'cosmos1s8qx0zvz8yd6e4x0mqmqf7fr9vvfn6226hkvrq'
 const DEMO_ROUTER_IMPLEMENTATION: EthAddress = '0x17fa3A98D0239a399927C7c3CCdE142e08Deb7B5'
+/** router.getCounterparty()'s clientId on mainnet, 2026-09-27. */
+const DEMO_HUB_CLIENT_ID = '08-wasm-1369'
 /** 2 gwei. */
 const DEMO_GAS_PRICE = 2_000_000_000n
 
@@ -104,6 +106,7 @@ export function createDemoReaders(sim: DemoSim, deployment: Deployment): { hub: 
         const gas = typicalClaimGas(Math.max(1, new Set(ids).size))
         return { gas: Number(gas), gasPrice: DEMO_GAS_PRICE.toString(), fee: (gas * DEMO_GAS_PRICE).toString(), simulated: false }
       }),
+    hubClientId: () => read(() => DEMO_HUB_CLIENT_ID),
   }
 
   return { hub, eth }
@@ -123,6 +126,19 @@ export function createDemoHubWriter(sim: DemoSim, address: HubAddress): HubWrite
         await later(sim.timeline.signMs, () => sim.signSend())
         stage.report('broadcasting')
         return await later(sim.timeline.latencyMs, () => sim.commitSend(address, ids, recipient))
+      } finally {
+        stage.done()
+      }
+    },
+    nudge: async (_sourceClientId, recipient, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        stage.report('simulating')
+        await later(sim.timeline.latencyMs, () => sim.simulateNudge(recipient))
+        stage.report('signing')
+        await later(sim.timeline.signMs, () => sim.signSend())
+        stage.report('broadcasting')
+        return await later(sim.timeline.latencyMs, () => sim.nudge(recipient))
       } finally {
         stage.done()
       }

@@ -341,6 +341,30 @@ export class DemoSim {
     return { txHash, height }
   }
 
+  /** The nudge's simulate half: just validates the recipient, no kids or ownership involved. */
+  simulateNudge(recipient: EthAddress): SendEstimate {
+    this.assertOnline()
+    this.takeFailure('simulate')
+    if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) throw new BridgeError('BadRecipient', `demo: ${recipient}`)
+    if (/^0x0{40}$/.test(recipient)) throw new BridgeError('ZeroRecipient')
+    return { gas: 130_000, amount: '650', denom: 'uatom' }
+  }
+
+  /**
+   * The speed-up nudge: doesn't touch any record or proof, just pulls the next background relay forward to
+   * almost now, as if a relayer had noticed the ICS20 packet and updated the client early.
+   */
+  nudge(recipient: EthAddress): SendResult {
+    this.takeFailure('sign')
+    if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) throw new BridgeError('BadRecipient', `demo: ${recipient}`)
+    if (/^0x0{40}$/.test(recipient)) throw new BridgeError('ZeroRecipient')
+    const height = this.hubHeight
+    const txHash = hubHash(`demo:nudge:${++this.txCount}`)
+    this.events.push({ at: this.now + Math.min(this.timeline.catchUpMs, 2_000), kind: 'background', ids: [] })
+    this.emit()
+    return { txHash, height }
+  }
+
   /** Mints every proven, unminted kid in `ids`, like Multicall3 aggregate3 with allowFailure. */
   claim(ids: readonly KidId[]): ClaimResult {
     this.takeFailure('claim')

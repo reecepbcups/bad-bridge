@@ -6,6 +6,7 @@ import { ErrorNote } from '../../ErrorNote'
 import { aboutMinutes, blockNumber, kidWord } from '../../format'
 import { Scene } from '../../Scene'
 import { ShareLink } from '../../ShareLink'
+import { SpeedUp } from '../../SpeedUp'
 import { StageList } from '../../StageList'
 import { lowerFirst, slowestStage, STAGE_LINE, STAGE_PROGRESS } from '../../stages'
 import { useTitle } from '../../useTitle'
@@ -69,6 +70,7 @@ export function CrossingStep({
           Hub block {blockNumber(h.hubHeight)} · Ethereum has seen {blockNumber(h.clientHeight)}
         </p>
       )}
+      {!caughtUp && <SpeedUp recipient={sent.recipient} n={n} />}
       <div className="row start">
         <a className="btn ghost" href={tracker}>
           Track them

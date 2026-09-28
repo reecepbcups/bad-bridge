@@ -15,7 +15,7 @@ import {
   type Hex,
   type Transport,
 } from 'viem'
-import { bridgeAbi, lightClientAbi, multicall3WriteAbi } from '../abi'
+import { bridgeAbi, lightClientAbi, multicall3WriteAbi, routerAbi } from '../abi'
 
 export const BRIDGE: Address = '0xDe185D7902340086cc4C37322584e246DC5eE198'
 export const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
@@ -55,6 +55,8 @@ export class FakeChain {
   clientId = 'cosmoshub-0'
   /** bridge.ROUTER() */
   router: Address = ROUTER
+  /** router.getCounterparty(clientId).clientId: the Hub-side client id Ethereum's client counterparts to. */
+  counterpartyClientId = '08-wasm-1369'
   /** eth_getStorageAt: lowercase address → slot → value */
   storage = new Map<string, Map<string, Hex>>()
   /** eth_gasPrice, wei */
@@ -174,6 +176,16 @@ export class FakeChain {
           abi: lightClientAbi,
           functionName: 'clientState',
           result: [this.clientChainId, { numerator: 2, denominator: 3 }, { revisionNumber: 4n, revisionHeight: this.latestHeight }, 1_209_600, 1_814_400, this.frozen, 1],
+        }),
+      }
+    }
+    if (to === this.router) {
+      return {
+        ok: true,
+        data: encodeFunctionResult({
+          abi: routerAbi,
+          functionName: 'getCounterparty',
+          result: { clientId: this.counterpartyClientId, merklePrefix: ['0x696263', '0x'] },
         }),
       }
     }

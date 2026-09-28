@@ -1,6 +1,6 @@
 import { toFunctionSelector } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { bridgeAbi, lightClientAbi, multicall3WriteAbi } from './abi'
+import { bridgeAbi, lightClientAbi, multicall3WriteAbi, routerAbi } from './abi'
 
 // Errors hash like functions: the first 4 bytes of keccak256(signature).
 // From `forge inspect BadBridge methodIdentifiers` and `forge inspect BadBridge errors` in eth/.
@@ -34,5 +34,10 @@ describe('abi', () => {
   it('has the ISP1ICS07Tendermint clientState() and Multicall3 aggregate3 selectors', () => {
     expect(toFunctionSelector(lightClientAbi.find((x) => x.type === 'function')!)).toBe('0xbd3ce6b0')
     expect(toFunctionSelector(multicall3WriteAbi.find((x) => x.type === 'function')!)).toBe('0x82ad56cb')
+  })
+
+  // From `cast sig "getCounterparty(string)"`: IICS02Client on Eureka's ICS26Router (cosmos/ibc-contracts).
+  it('has the IICS02Client getCounterparty() selector', () => {
+    expect(toFunctionSelector(routerAbi.find((x) => x.type === 'function')!)).toBe('0xb0777bfa')
   })
 })

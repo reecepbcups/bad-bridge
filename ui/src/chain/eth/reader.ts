@@ -11,7 +11,7 @@ import {
   type KidEthStatus,
   type KidId,
 } from '../types'
-import { bridgeAbi, lightClientAbi, multicall3WriteAbi } from './abi'
+import { bridgeAbi, lightClientAbi, multicall3WriteAbi, routerAbi } from './abi'
 import { createEthPublicClient } from './client'
 import { typicalClaimGas } from './gas'
 import { findRevert, toEthError } from './errors'
@@ -200,6 +200,17 @@ export function createEthReader(deployment: Deployment, options: EthReaderOption
         ])
         const gas = simulated ?? typicalClaimGas(Math.max(1, unique.length))
         return { gas: Number(gas), gasPrice: gasPrice.toString(), fee: (gas * gasPrice).toString(), simulated: simulated !== null }
+      }),
+
+    hubClientId: () =>
+      guard(async () => {
+        const bridge = requireBridge(deployment)
+        const [router, clientId] = await Promise.all([
+          readContract(client, { address: bridge, abi: bridgeAbi, functionName: 'ROUTER' }),
+          readContract(client, { address: bridge, abi: bridgeAbi, functionName: 'clientId' }),
+        ])
+        const counterparty = await readContract(client, { address: router, abi: routerAbi, functionName: 'getCounterparty', args: [clientId] })
+        return counterparty.clientId
       }),
   }
 }

@@ -26,6 +26,12 @@ export const lightClientAbi = parseAbi([
   'function clientState() view returns (string chainId, TrustThreshold trustLevel, Height latestHeight, uint32 trustingPeriod, uint32 unbondingPeriod, bool isFrozen, uint8 zkAlgorithm)',
 ])
 
+/** IICS02Client.getCounterparty(), the slice of Eureka's ICS26Router the speed-up nudge needs. */
+export const routerAbi = parseAbi([
+  'struct CounterpartyInfo { string clientId; bytes[] merklePrefix; }',
+  'function getCounterparty(string clientId) view returns (CounterpartyInfo)',
+])
+
 /** Multicall3.aggregate3 as a payable write (viem's multicall3Abi marks it view, which writeContract refuses). */
 export const multicall3WriteAbi = parseAbi([
   'struct Call3 { address target; bool allowFailure; bytes callData; }',

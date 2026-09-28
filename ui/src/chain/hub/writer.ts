@@ -11,6 +11,7 @@ import { SignMode } from 'cosmjs-types/cosmos/tx/signing/v1beta1/signing'
 import { SimulateRequest, SimulateResponse } from 'cosmjs-types/cosmos/tx/v1beta1/service'
 import { AuthInfo, Fee, Tx, TxBody, TxRaw } from 'cosmjs-types/cosmos/tx/v1beta1/tx'
 import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx'
+import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx'
 import { sha256 } from 'viem'
 import type { Deployment } from '../../config/deployments'
 import {
@@ -24,7 +25,7 @@ import {
   type SendResult,
   type SendStage,
 } from '../types'
-import { buildSendMsgs, type ExecuteEncodeObject } from './encode'
+import { buildNudgeMsg, buildSendMsgs, MSG_TRANSFER, type ExecuteEncodeObject, type TransferEncodeObject } from './encode'
 import { chainLogToBridgeError, toHubError, walletErrorToBridgeError } from './errors'
 import { toHeight } from './events'
 import { abciQuery } from './reader'
@@ -44,6 +45,10 @@ export const MAX_GAS_BASE = 300_000n
 /** The most a send may cost, in the fee denom's smallest unit: 0.25 ATOM plus 0.05 ATOM per kid. Above it: FeeTooHigh. */
 export const MAX_FEE_BASE = 250_000n
 export const MAX_FEE_PER_KID = 50_000n
+/** A MsgTransfer simulates to ~120k gas. More means the endpoint is lying: refuse. */
+export const MAX_NUDGE_GAS = 400_000n
+/** The most the nudge's own network fee may be: 0.05 ATOM, on top of the 0.01 ATOM it sends. Above it: FeeTooHigh. */
+export const MAX_NUDGE_FEE = 50_000n
 
 const SECP256K1_PUBKEY = '/cosmos.crypto.secp256k1.PubKey'
 // sdk ErrTxInMempoolCache: the same bytes were already accepted, e.g. by an earlier endpoint that then timed out
@@ -124,6 +129,12 @@ export function checkFee(kids: number, gasUsed: bigint, fee: bigint, denom: stri
   if (fee > maxFee) throw new BridgeError('FeeTooHigh', `fee ${fee}${denom} for ${kids} kids is over the ${maxFee}${denom} ceiling`)
 }
 
+/** checkFee's nudge equivalent: one fixed-size MsgTransfer, so no per-kid scaling. */
+export function checkNudgeFee(gasUsed: bigint, fee: bigint, denom: string): void {
+  if (gasUsed > MAX_NUDGE_GAS) throw new BridgeError('FeeTooHigh', `the Hub simulated ${gasUsed} gas for the speed-up transfer; more than ${MAX_NUDGE_GAS} means something's off`)
+  if (fee > MAX_NUDGE_FEE) throw new BridgeError('FeeTooHigh', `fee ${fee}${denom} for the speed-up transfer is over the ${MAX_NUDGE_FEE}${denom} ceiling`)
+}
+
 /** Finds the BaseAccount fields inside BaseAccount or any vesting wrapper (REST JSON). */
 function findBaseAccount(v: unknown, depth = 0): Record<string, unknown> | null {
   if (!isRecord(v) || depth > 4) return null
@@ -166,6 +177,28 @@ export function simulationTxBytes(msgs: readonly ExecuteEncodeObject[], pubkey: 
   const tx = Tx.fromPartial({
     body: TxBody.fromPartial({
       messages: msgs.map((m) => ({ typeUrl: m.typeUrl, value: MsgExecuteContract.encode(m.value).finish() })),
+      memo: '',
+    }),
+    authInfo: AuthInfo.fromPartial({
+      fee: Fee.fromPartial({}),
+      signerInfos: [
+        {
+          publicKey: { typeUrl: SECP256K1_PUBKEY, value: PubKey.encode({ key: pubkey }).finish() },
+          sequence: BigInt(sequence),
+          modeInfo: { single: { mode: SignMode.SIGN_MODE_UNSPECIFIED } },
+        },
+      ],
+    }),
+    signatures: [new Uint8Array()],
+  })
+  return Tx.encode(tx).finish()
+}
+
+/** simulationTxBytes's nudge equivalent: the same empty-signature shape, around one MsgTransfer. */
+export function transferSimulationTxBytes(msg: TransferEncodeObject['value'], pubkey: Uint8Array, sequence: number): Uint8Array {
+  const tx = Tx.fromPartial({
+    body: TxBody.fromPartial({
+      messages: [{ typeUrl: MSG_TRANSFER, value: MsgTransfer.encode(msg).finish() }],
       memo: '',
     }),
     authInfo: AuthInfo.fromPartial({
@@ -321,6 +354,19 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
     return { msgs, account, estimate: { gas: Number(gas), amount: fee.toString(), denom: hub.gasDenom } }
   }
 
+  async function prepareNudge(sourceClientId: string, recipient: EthAddress): Promise<{ msg: TransferEncodeObject; account: AccountInfo; estimate: SendEstimate }> {
+    const msg = buildNudgeMsg(address, sourceClientId, hub.gasDenom, recipient, Date.now())
+    const account = await getAccount(t, address)
+    const pubkey = await pubkeyFor(account)
+    const [used, price] = await Promise.all([
+      simulateGas(t, transferSimulationTxBytes(msg.value, pubkey, account.sequence)),
+      gasPrice(t, hub.gasDenom),
+    ])
+    const { gas, fee } = computeFee(used, price)
+    checkNudgeFee(used, fee, hub.gasDenom)
+    return { msg, account, estimate: { gas: Number(gas), amount: fee.toString(), denom: hub.gasDenom } }
+  }
+
   async function waitForInclusion(hash: string, ids: readonly KidId[], timeoutMs: number): Promise<SendResult | null> {
     const deadline = Date.now() + timeoutMs
     const rest = hub.rest.map(strip)
@@ -384,6 +430,53 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
     throw new BridgeError('Network', `tx ${hash} was accepted but isn't in a block after ${Math.round(inclusionTimeoutMs / 1000)}s; check an explorer before trying again`)
   }
 
+  /** sendTx's nudge equivalent: same simulate → sign → broadcast → wait shape, around one MsgTransfer. */
+  async function nudgeTx(sourceClientId: string, recipient: EthAddress, report: (stage: SendStage) => void): Promise<SendResult> {
+    report('simulating')
+    let prepared: { msg: TransferEncodeObject; account: AccountInfo; estimate: SendEstimate }
+    try {
+      prepared = await prepareNudge(sourceClientId, recipient)
+    } catch (e) {
+      throw toHubError(e)
+    }
+
+    let txBytes: Uint8Array
+    try {
+      const wallet = await signer()
+      report('signing')
+      const client = await SigningCosmWasmClient.offline(wallet)
+      const fee = { amount: [{ denom: prepared.estimate.denom, amount: prepared.estimate.amount }], gas: String(prepared.estimate.gas) }
+      const raw = await client.sign(address, [prepared.msg], fee, '', {
+        accountNumber: prepared.account.accountNumber,
+        sequence: prepared.account.sequence,
+        chainId: hub.chainId,
+      })
+      txBytes = TxRaw.encode(raw).finish()
+    } catch (e) {
+      throw walletErrorToBridgeError(e)
+    }
+
+    report('broadcasting')
+    const hash = sha256(txBytes).slice(2).toUpperCase()
+    try {
+      const sent = await broadcastSync(t, txBytes)
+      if (!sent.accepted) throw chainLogToBridgeError(sent.log)
+    } catch (e) {
+      if (!(e instanceof BridgeError && e.code === 'Network')) throw toHubError(e)
+      const landed = await waitForInclusion(hash, [], Math.min(inclusionTimeoutMs, 30_000))
+      if (landed) return landed
+      throw new BridgeError('Network', `couldn't broadcast tx ${hash}; check an explorer before trying again (${e.detail ?? ''})`)
+    }
+
+    try {
+      const landed = await waitForInclusion(hash, [], inclusionTimeoutMs)
+      if (landed) return landed
+    } catch (e) {
+      throw toHubError(e)
+    }
+    throw new BridgeError('Network', `tx ${hash} was accepted but isn't in a block after ${Math.round(inclusionTimeoutMs / 1000)}s; check an explorer before trying again`)
+  }
+
   return {
     address,
 
@@ -399,6 +492,15 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
       const stage = stageReporter(options?.onStage)
       try {
         return await sendTx(ids, recipient, stage.report)
+      } finally {
+        stage.done()
+      }
+    },
+
+    async nudge(sourceClientId, recipient, options) {
+      const stage = stageReporter(options?.onStage)
+      try {
+        return await nudgeTx(sourceClientId, recipient, stage.report)
       } finally {
         stage.done()
       }

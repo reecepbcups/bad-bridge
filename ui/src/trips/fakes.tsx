@@ -60,6 +60,8 @@ export interface FakeChain {
   bridgeEscrow: Hex
   /** What bridgeWiring() returns. Defaults to the deployment's own settings. */
   wiring: BridgeWiring
+  /** What hubClientId() returns: the Hub-side client id for the speed-up nudge. */
+  hubClientId: string
   /** contractInfo(): address → info. Missing addresses fail with Unknown. */
   contracts: Map<HubAddress, ContractInfo>
   /** proxyImplementation(): lowercase address → implementation. */
@@ -83,6 +85,7 @@ export function fakeChain(init: Partial<FakeChain> = {}): FakeChain {
     escrowCw721: LIVE.hub.cw721,
     bridgeEscrow: GOOD_ESCROW,
     wiring: { router: LIVE.eth.router, clientId: LIVE.eth.clientId, lightClient: LIVE.eth.lightClient, chainId: LIVE.hub.chainId },
+    hubClientId: '08-wasm-1369',
     contracts: new Map(),
     proxies: new Map(),
     gasPrice: 1_000_000_000n,
@@ -162,6 +165,7 @@ export function fakeReaders(chain: FakeChain) {
         return { gas: Number(gas), gasPrice: chain.gasPrice.toString(), fee: (gas * chain.gasPrice).toString(), simulated: claimable }
       }),
     ),
+    hubClientId: vi.fn(() => guard('hubClientId', () => chain.hubClientId)),
   } satisfies EthReader
   return { hub, eth }
 }
@@ -182,6 +186,12 @@ export function fakeHubWriter(chain: FakeChain, address: HubAddress, { indexed =
         if (indexed) send(chain, id, height, recipient, address)
       }
       return Promise.resolve({ txHash: 'AB'.repeat(32), height })
+    }),
+    nudge: vi.fn((_sourceClientId: string, _recipient: EthAddress, options?: SendOptions) => {
+      options?.onStage?.('simulating')
+      options?.onStage?.('signing')
+      options?.onStage?.('broadcasting')
+      return Promise.resolve({ txHash: 'CD'.repeat(32), height: chain.hubHeight })
     }),
   } satisfies HubWriter
 }

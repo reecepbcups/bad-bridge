@@ -13,6 +13,7 @@ import { useFocusWhenDone, useHubNow } from '../hooks'
 import { KidArt, KidDoodle } from '../KidArt'
 import { parseLookup, type Lookup } from '../lookup'
 import { ShareLink } from '../ShareLink'
+import { SpeedUp } from '../SpeedUp'
 import { StageList, TrackBar } from '../StageList'
 import { inFlight, STAGE_LINE, STAGE_PILL } from '../stages'
 import { SwitchChain } from '../SwitchChain'
@@ -57,7 +58,10 @@ export function KidsView({ address }: { address?: string }) {
   const list = trips.data ?? []
   const ready = list.filter((t) => t.stage === 'ready')
   const home = list.filter((t) => t.stage === 'home-eth').length
-  const crossing = list.filter((t) => inFlight(t.stage)).length
+  const crossingTrips = list.filter((t) => inFlight(t.stage))
+  const crossing = crossingTrips.length
+  // kids in one send usually share a recipient; if they don't, this speeds up whichever one's address it is
+  const crossingRecipient = crossingTrips.find((t) => t.recipient)?.recipient ?? null
   const title = mine ? 'My kids' : `Kids for ${shortAddress(target ?? '')}`
   useTitle(title)
 
@@ -126,6 +130,7 @@ export function KidsView({ address }: { address?: string }) {
               </ClaimButton>
             )}
           </div>
+          {crossing > 0 && crossingRecipient && <SpeedUp recipient={crossingRecipient} n={crossing} />}
           {ready.length > 0 && ethWallet.wrongChain && <SwitchChain />}
           {ready.length > 0 && !ethWallet.wrongChain && ethWallet.status !== 'connected' && (
             <p className="hint">Connect an Ethereum wallet to claim. Anyone can claim: kids always land at the address they were sent to.</p>

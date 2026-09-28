@@ -4,11 +4,15 @@ import { Tx } from 'cosmjs-types/cosmos/tx/v1beta1/tx'
 import { describe, expect, it } from 'vitest'
 import { isBridgeError, type BridgeErrorCode } from '../types'
 import {
+  buildNudgeMsg,
   buildSendMsgs,
   checkKidIds,
   decodeRecipient,
   encodeRecipient,
   MSG_EXECUTE_CONTRACT,
+  MSG_TRANSFER,
+  NUDGE_AMOUNT_UATOM,
+  NUDGE_TIMEOUT_MS,
   parseKidId,
   recipientBytes,
   recipientFromHex,
@@ -71,6 +75,29 @@ describe('golden vector', () => {
     const msgs = buildSendMsgs(REECE, CW721, ESCROW, [5, 1, 9000], RECIPIENT)
     expect(msgs.map((m) => (JSON.parse(fromUtf8(m.value.msg)) as { send_nft: { token_id: string } }).send_nft.token_id)).toEqual(['5', '1', '9000'])
     expect(new Set(msgs.map((m) => m.value.contract))).toEqual(new Set([CW721]))
+  })
+})
+
+describe('buildNudgeMsg', () => {
+  it('builds a v2 MsgTransfer: client id as source_channel, 0.01 ATOM, plain 0x receiver, no timeout height', () => {
+    const msg = buildNudgeMsg(REECE, '08-wasm-1369', 'uatom', RECIPIENT, 1_000_000)
+    expect(msg.typeUrl).toBe(MSG_TRANSFER)
+    expect(msg.value).toEqual({
+      sourcePort: 'transfer',
+      sourceChannel: '08-wasm-1369',
+      token: { denom: 'uatom', amount: NUDGE_AMOUNT_UATOM },
+      sender: REECE,
+      receiver: RECIPIENT,
+      timeoutHeight: { revisionNumber: 0n, revisionHeight: 0n },
+      timeoutTimestamp: BigInt(Math.floor((1_000_000 + NUDGE_TIMEOUT_MS) / 1000)),
+      memo: '',
+      encoding: '',
+    })
+  })
+
+  it('validates the receiver the same way a kid send does', () => {
+    expect(codeOf(() => buildNudgeMsg(REECE, '08-wasm-1369', 'uatom', '0x0000000000000000000000000000000000000000', 0))).toBe('ZeroRecipient')
+    expect(codeOf(() => buildNudgeMsg(REECE, '08-wasm-1369', 'uatom', 'not-an-address', 0))).toBe('BadRecipient')
   })
 })
 

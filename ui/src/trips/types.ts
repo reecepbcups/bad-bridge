@@ -174,3 +174,15 @@ export interface ClaimKidsState extends MutationState<[ids: readonly KidId[]], C
   /** signing → confirming while a claim runs; null otherwise (and briefly before the first stage). */
   stage: ClaimStage | null
 }
+
+/** Options for useNudge. */
+export interface NudgeOptions {
+  /** Hears each stage of a running nudge, as HubWriter.nudge reports it. */
+  onStage?: (stage: SendStage) => void
+}
+
+/** useNudge(): the mutation plus where a running speed-up send is. */
+export interface NudgeState extends MutationState<[recipient: EthAddress], SendResult> {
+  /** simulating → signing → broadcasting while a nudge runs; null otherwise (and briefly before the first stage). */
+  stage: SendStage | null
+}

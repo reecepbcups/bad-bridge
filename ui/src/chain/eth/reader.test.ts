@@ -100,6 +100,15 @@ describe('bridgeWiring', () => {
   })
 })
 
+describe('hubClientId', () => {
+  it('reads ROUTER().getCounterparty(clientId()).clientId', async () => {
+    expect(await reader().hubClientId()).toBe('08-wasm-1369')
+    chain.clientId = 'cosmoshub-7'
+    chain.counterpartyClientId = '08-wasm-2'
+    expect(await reader().hubClientId()).toBe('08-wasm-2')
+  })
+})
+
 describe('proxyImplementation', () => {
   it('reads the EIP-1967 slot: an address when set, null when empty', async () => {
     expect(await reader().proxyImplementation(ROUTER)).toBeNull()
@@ -143,13 +152,14 @@ describe('failures', () => {
     await expect(r.bridgeEscrow()).rejects.toMatchObject({ code: 'NotLive' })
     await expect(r.bridgeWiring()).rejects.toMatchObject({ code: 'NotLive' })
     await expect(r.estimateClaim([1])).rejects.toMatchObject({ code: 'NotLive' })
+    await expect(r.hubClientId()).rejects.toMatchObject({ code: 'NotLive' })
     expect(chain.publicLog).toEqual([])
   })
 
   it('maps transport failures to Network', async () => {
     chain.publicError = new HttpRequestError({ url: 'https://rpc.example', status: 503, body: {} })
     const r = reader()
-    for (const p of [r.client(), r.kidStatus([1]), r.isContract(ALICE), r.bridgeEscrow(), r.bridgeWiring(), r.proxyImplementation(ROUTER), r.estimateClaim([1])]) {
+    for (const p of [r.client(), r.kidStatus([1]), r.isContract(ALICE), r.bridgeEscrow(), r.bridgeWiring(), r.proxyImplementation(ROUTER), r.estimateClaim([1]), r.hubClientId()]) {
       const err = await p.catch((e: unknown) => e)
       expect(err).toBeInstanceOf(BridgeError)
       expect(err).toMatchObject({ code: 'Network' })

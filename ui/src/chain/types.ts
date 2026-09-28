@@ -160,6 +160,12 @@ export interface EthReader {
    * mainnet gas for that many kids. An empty list prices one typical kid without simulating.
    */
   estimateClaim(ids: readonly KidId[]): Promise<ClaimEstimate>
+  /**
+   * The Hub-side Eureka client id for Ethereum (the router's counterparty of `bridge.clientId()`), read live
+   * from the router. This is the `sourceChannel` a Hub MsgTransfer needs to reach Ethereum; it isn't pinned in
+   * config because the router can repoint it on a client migration.
+   */
+  hubClientId(): Promise<string>
 }
 
 /**
@@ -200,6 +206,13 @@ export interface HubWriter {
    * `options.onStage` reports simulating → signing → broadcasting.
    */
   send(ids: readonly KidId[], recipient: EthAddress, options?: SendOptions): Promise<SendResult>
+  /**
+   * Sends a small ATOM ICS20 transfer to `recipient` over `sourceClientId` (from EthReader.hubClientId()), so a
+   * relayer watching for ICS20 packets notices sooner and updates Ethereum's light client. A nudge, not a
+   * guarantee: it doesn't change how proving or claiming works. `options.onStage` reports the same three stages
+   * as send().
+   */
+  nudge(sourceClientId: string, recipient: EthAddress, options?: SendOptions): Promise<SendResult>
 }
 
 /** Ethereum transactions, bound to the connected Ethereum wallet. */
