@@ -440,8 +440,9 @@ function UpdateClient() {
         {stage ? UPDATE_LABEL[stage](walletName) : 'Update Client'}
       </button>
       <p className="hint">
-        Sends 0.01 ATOM to your own Ethereum address, plus a small network fee. Relayers watch for ATOM transfers
-        like this one, so it can help Ethereum catch up sooner. No guarantees.
+        Sends 0.001 ATOM to your own Ethereum address, plus a small network fee. Relayers watch for ATOM transfers
+        like this one, so it can help Ethereum catch up sooner. It takes about 5
+        minutes after you submit. No guarantees.
         {/* COPY: update-client hint */}
       </p>
       {nudge.error && (

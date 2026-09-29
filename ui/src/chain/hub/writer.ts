@@ -26,7 +26,7 @@ import {
   type SendStage,
 } from '../types'
 import { checkRecipient } from '../eth/recipient'
-import { buildNudgeMsg, buildSendMsgs, MSG_TRANSFER, type ExecuteEncodeObject, type TransferEncodeObject } from './encode'
+import { buildNudgeMsg, buildSendMsgs, MSG_TRANSFER, NUDGE_MEMO, type ExecuteEncodeObject, type TransferEncodeObject } from './encode'
 import { chainLogToBridgeError, toHubError, walletErrorToBridgeError } from './errors'
 import { toHeight } from './events'
 import { abciQuery } from './reader'
@@ -48,7 +48,7 @@ export const MAX_FEE_BASE = 250_000n
 export const MAX_FEE_PER_KID = 50_000n
 /** A MsgTransfer simulates to ~120k gas. More means the endpoint is lying: refuse. */
 export const MAX_NUDGE_GAS = 400_000n
-/** The most the nudge's own network fee may be: 0.05 ATOM, on top of the 0.01 ATOM it sends. Above it: FeeTooHigh. */
+/** The most the nudge's own network fee may be: 0.05 ATOM, on top of the 0.001 ATOM it sends. Above it: FeeTooHigh. */
 export const MAX_NUDGE_FEE = 50_000n
 
 const SECP256K1_PUBKEY = '/cosmos.crypto.secp256k1.PubKey'
@@ -203,7 +203,7 @@ export function transferSimulationTxBytes(msg: TransferEncodeObject['value'], pu
   const tx = Tx.fromPartial({
     body: TxBody.fromPartial({
       messages: [{ typeUrl: MSG_TRANSFER, value: MsgTransfer.encode(msg).finish() }],
-      memo: '',
+      memo: NUDGE_MEMO,
     }),
     authInfo: AuthInfo.fromPartial({
       fee: Fee.fromPartial({}),
@@ -466,7 +466,7 @@ export function createHubWriter(config: HubWriterConfig): HubWriter {
       report('signing')
       const client = await SigningCosmWasmClient.offline(wallet)
       const fee = { amount: [{ denom: prepared.estimate.denom, amount: prepared.estimate.amount }], gas: String(prepared.estimate.gas) }
-      const raw = await client.sign(address, [prepared.msg], fee, '', {
+      const raw = await client.sign(address, [prepared.msg], fee, NUDGE_MEMO, {
         accountNumber: prepared.account.accountNumber,
         sequence: prepared.account.sequence,
         chainId: hub.chainId,
