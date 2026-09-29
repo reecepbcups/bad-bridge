@@ -92,7 +92,7 @@ const COPY: Readonly<Record<BridgeErrorCode, CopyFn>> = {
   }),
   TooManyKids: () => ({
     title: "That's a lot of kids at once",
-    body: 'Send up to 100 at a time. Take some out and send the rest after. Nothing was sent.',
+    body: 'Send up to 50 at a time. Take some out and send the rest after. Nothing was sent.',
   }),
   FeeTooHigh: () => ({
     title: 'That fee looks wrong',

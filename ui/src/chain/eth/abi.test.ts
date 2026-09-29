@@ -9,6 +9,7 @@ const FORGE_FUNCTIONS: Record<string, string> = {
   'ROUTER()': '0x32fe7b26',
   'clientId()': '0x6bb3471a',
   'claim(uint32)': '0x04951891',
+  'claimMany(uint32[])': '0x3948ff7a',
   'lightClient()': '0xb5700e68',
   'ownerOf(uint256)': '0x6352211e',
   'proven(uint32)': '0xec703b2c',

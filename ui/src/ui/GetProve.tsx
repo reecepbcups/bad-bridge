@@ -171,7 +171,7 @@ function GetProveSheet({ open, onClose, onChange }: { open: boolean; onClose: ()
     <Sheet open={open} onClose={onClose} title="Get PROVE">
       <p className="lede">
         Proving costs PROVE, paid to Succinct's prover network from an account there. Buy some with ETH, then deposit it.
-        One proof costs about 0.33, whether it carries 1 kid or 10.
+        One proof costs about 0.33, whether it carries 1 kid or up to 50.
         {/* COPY: get PROVE intro */}
       </p>
       {!connected ? (

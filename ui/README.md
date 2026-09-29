@@ -45,7 +45,7 @@ Full addresses and RPC lists are in `src/config/deployments.ts`. At startup the 
 
 If any of these fails, Send is disabled and a banner says why. About also reads, live, who could change what a kid depends on: the escrow's and the collection's admins, and whether the Eureka router is an upgradeable proxy. These checks come from public RPCs, so they catch config and ops mistakes; they aren't a trust anchor.
 
-Before each send the app also re-reads the light client (a frozen or unreadable client refuses the send), refuses fees and simulated gas far above what a send costs, caps a send at 100 kids, and refuses burn and precompile addresses as recipients.
+Before each send the app also re-reads the light client (a frozen or unreadable client refuses the send), refuses fees and simulated gas far above what a send costs, caps a send at 50 kids, and refuses burn and precompile addresses as recipients.
 
 ## Tests
 

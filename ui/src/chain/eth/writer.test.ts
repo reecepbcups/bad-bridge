@@ -3,8 +3,8 @@ import { mainnet } from 'viem/chains'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DEPLOYMENTS, type Deployment } from '../../config/deployments'
 import { BridgeError, type EthReader, type KidEthStatus, type KidId } from '../types'
-import { bridgeAbi, multicall3WriteAbi } from './abi'
-import { ALICE, BOB, BRIDGE, FAKE_GAS, FakeChain, MULTICALL3 } from './testing/fakeChain'
+import { bridgeAbi } from './abi'
+import { ALICE, BOB, BRIDGE, FakeChain } from './testing/fakeChain'
 import { createEthWriter, sortClaimable } from './writer'
 
 const deployment = DEPLOYMENTS['reece-test']
@@ -27,14 +27,11 @@ const staleReader = {
     Promise.resolve(new Map(ids.map((id): [KidId, KidEthStatus] => [id, { proven: ALICE, owner: null }]))),
 } as EthReader
 
-/** The kid ids a sent tx claims, whether direct or through aggregate3. */
-function claimedIn(data: `0x${string}`, to: string): { ids: number[]; allowFailure?: boolean[] } {
-  if (to === BRIDGE) return { ids: [decodeFunctionData({ abi: bridgeAbi, data }).args?.[0] as number] }
-  const { args } = decodeFunctionData({ abi: multicall3WriteAbi, data })
-  return {
-    ids: args[0].map((c) => decodeFunctionData({ abi: bridgeAbi, data: c.callData }).args?.[0] as number),
-    allowFailure: args[0].map((c) => c.allowFailure),
-  }
+/** The kid ids a sent tx claims, through claim or claimMany. */
+function claimedIn(data: `0x${string}`): number[] {
+  const call = decodeFunctionData({ abi: bridgeAbi, data })
+  if (call.functionName === 'claimMany') return [...call.args[0]]
+  return [call.args?.[0] as number]
 }
 
 beforeEach(() => {
@@ -51,26 +48,23 @@ describe('claim', () => {
     expect(chain.sent).toHaveLength(1)
     const [tx] = chain.sent
     expect(tx).toMatchObject({ hash: txHash, to: BRIDGE })
-    expect(claimedIn(tx!.data, tx!.to).ids).toEqual([1])
+    expect(claimedIn(tx!.data)).toEqual([1])
     expect(chain.owners.get(1)).toBe(ALICE)
   })
 
-  it('claims several kids in one aggregate3 with allowFailure, gas from the strict twin plus 25%', async () => {
+  it('claims several kids in one bridge.claimMany', async () => {
     await writer().claim([1, 2, 3])
     expect(chain.sent).toHaveLength(1)
     const [tx] = chain.sent
-    expect(tx!.to).toBe(MULTICALL3)
-    expect(claimedIn(tx!.data, tx!.to)).toEqual({ ids: [1, 2, 3], allowFailure: [true, true, true] })
-    expect(tx!.gas).toBe((FAKE_GAS * 5n) / 4n)
-    const strict = chain.estimates.at(-1)!
-    expect(claimedIn(strict.data, getAddress(strict.to)).allowFailure).toEqual([false, false, false])
+    expect(tx!.to).toBe(BRIDGE)
+    expect(claimedIn(tx!.data)).toEqual([1, 2, 3])
     expect(chain.owners.get(3)).toBe(BOB)
   })
 
   it('skips kids that are minted or unproven, and dedupes', async () => {
     await writer().claim([4, 1, 5, 1, 2])
     const [tx] = chain.sent
-    expect(claimedIn(tx!.data, tx!.to).ids).toEqual([1, 2])
+    expect(claimedIn(tx!.data)).toEqual([1, 2])
   })
 
   it('refuses with NotProven, saying why, when nothing is left to claim', async () => {
@@ -85,20 +79,14 @@ describe('claim', () => {
     expect(chain.sent).toHaveLength(0)
   })
 
-  it('drops batch members the simulation says will fail (claimed meanwhile)', async () => {
+  it('sends the whole batch and lets the contract skip kids claimed meanwhile', async () => {
     chain.owners.set(2, ALICE)
     await writer({ reader: staleReader }).claim([1, 2, 3])
     const [tx] = chain.sent
-    expect(tx!.to).toBe(MULTICALL3)
-    expect(claimedIn(tx!.data, tx!.to).ids).toEqual([1, 3])
-  })
-
-  it('falls back to a direct claim when only one batch member survives', async () => {
-    chain.owners.set(2, ALICE)
-    await writer({ reader: staleReader }).claim([1, 2])
-    const [tx] = chain.sent
     expect(tx!.to).toBe(BRIDGE)
-    expect(claimedIn(tx!.data, tx!.to).ids).toEqual([1])
+    expect(claimedIn(tx!.data)).toEqual([1, 2, 3])
+    expect(chain.owners.get(1)).toBe(ALICE)
+    expect(chain.owners.get(3)).toBe(BOB)
   })
 
   it('decodes NotProven(uint32) from a reverted simulation', async () => {

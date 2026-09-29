@@ -9,7 +9,7 @@ export type KidId = number
  * Most kids one Hub send may carry. Each send_nft costs ~312k gas with headroom and the Hub's block gas limit is
  * 75M, so 100 leaves plenty of room. The Hub writer refuses more with TooManyKids.
  */
-export const MAX_KIDS_PER_SEND = 100
+export const MAX_KIDS_PER_SEND = 50
 /** 0x Ethereum address. Adapters return it checksummed. */
 export type EthAddress = Address
 /** bech32 Cosmos Hub account address (cosmos1…). */

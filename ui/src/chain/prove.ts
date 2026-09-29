@@ -123,7 +123,7 @@ export interface ProveKidWriter {
 
 /**
  * PROVE the Succinct account must hold before sending. One proof measured 0.334 PROVE on mainnet 2026-09-28 for
- * 1 kid and for 10 kids alike, so it's per proof, not per kid. 0.34 covers one proof.
+ * 1 kid and for 10 kids alike, so it's per proof, not per kid. 0.34 covers one proof of up to 50 kids.
  */
 export const PROVE_NEEDED = 34n * 10n ** 16n
 

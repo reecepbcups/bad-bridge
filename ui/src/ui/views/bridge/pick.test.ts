@@ -27,7 +27,7 @@ describe('togglePick', () => {
 
   it('refuses a pick past the per-send cap, but still lets one go', () => {
     const full = Array.from({ length: MAX_KIDS_PER_SEND }, (_, i) => i + 1)
-    expect(MAX_KIDS_PER_SEND).toBe(100)
+    expect(MAX_KIDS_PER_SEND).toBe(50)
     expect(togglePick(full, 500)).toEqual({ picked: full, full: true })
     expect(togglePick(full, 1).picked).toHaveLength(MAX_KIDS_PER_SEND - 1)
     expect(togglePick([1, 2], 3, 2)).toEqual({ picked: [1, 2], full: true })

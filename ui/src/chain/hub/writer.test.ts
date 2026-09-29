@@ -181,7 +181,7 @@ describe('simulateSend', () => {
     ['19-byte recipient', [1], '0xd2c392084761cb6e44c544b6f39dcc001fde97', 'BadRecipient'],
     ['duplicate kid', [1, 1], RECIPIENT, 'BadTokenId'],
     ['no kids', [], RECIPIENT, 'BadTokenId'],
-    ['batch over 100 kids', Array.from({ length: 101 }, (_, i) => i + 1), RECIPIENT, 'TooManyKids'],
+    ['batch over 50 kids', Array.from({ length: 51 }, (_, i) => i + 1), RECIPIENT, 'TooManyKids'],
   ] as const)('refuses a %s before touching the network', async (_, ids, recipient, code) => {
     const { fetch, calls } = chain()
     await expect(codeOf(writer(fetch).simulateSend(ids, recipient as `0x${string}`))).resolves.toMatchObject({ code })

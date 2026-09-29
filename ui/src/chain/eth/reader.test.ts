@@ -1,11 +1,12 @@
-import { createPublicClient, getAddress, HttpRequestError, type Hex } from 'viem'
+import { createPublicClient, decodeFunctionData, getAddress, HttpRequestError, type Hex } from 'viem'
 import { mainnet } from 'viem/chains'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DEPLOYMENTS, type Deployment } from '../../config/deployments'
 import { BridgeError } from '../types'
+import { bridgeAbi } from './abi'
 import { typicalClaimGas } from './gas'
 import { createEthReader, EIP1967_IMPLEMENTATION_SLOT, isContractCode } from './reader'
-import { ALICE, BOB, BRIDGE, ESCROW, FAKE_GAS, FakeChain, LIGHT_CLIENT, MULTICALL3, ROUTER } from './testing/fakeChain'
+import { ALICE, BOB, BRIDGE, ESCROW, FAKE_GAS, FakeChain, LIGHT_CLIENT, ROUTER } from './testing/fakeChain'
 
 const deployment = DEPLOYMENTS['reece-test']
 const notLive: Deployment = { ...deployment, eth: { ...deployment.eth, bridge: null } }
@@ -118,13 +119,14 @@ describe('proxyImplementation', () => {
 })
 
 describe('estimateClaim', () => {
-  it('simulates when every kid can be claimed: claim() for one, aggregate3 for several', async () => {
+  it('simulates when every kid can be claimed: claim() for one, claimMany for several', async () => {
     chain.proven.set(2, ALICE).set(3, BOB)
     chain.gasPrice = 3_000_000_000n
     expect(await reader().estimateClaim([2])).toEqual({ gas: Number(FAKE_GAS), gasPrice: '3000000000', fee: String(FAKE_GAS * 3_000_000_000n), simulated: true })
     expect(chain.estimates.at(-1)?.to.toLowerCase()).toBe(BRIDGE.toLowerCase())
     expect(await reader().estimateClaim([2, 3, 2])).toMatchObject({ gas: Number(FAKE_GAS), simulated: true })
-    expect(chain.estimates.at(-1)?.to.toLowerCase()).toBe(MULTICALL3.toLowerCase())
+    expect(chain.estimates.at(-1)?.to.toLowerCase()).toBe(BRIDGE.toLowerCase())
+    expect(decodeFunctionData({ abi: bridgeAbi, data: chain.estimates.at(-1)!.data }).functionName).toBe('claimMany')
   })
 
   it('falls back to typical gas when a kid can\'t be claimed now, and prices one kid for an empty list', async () => {

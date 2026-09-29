@@ -18,7 +18,7 @@ import { useToast } from '../Toasts'
 import { useTitle } from '../useTitle'
 import './about.css'
 
-// Ported from the mockup's About view, with the facts fixed: one signature sends up to 100 kids, one Ethereum
+// Ported from the mockup's About view, with the facts fixed: one signature sends up to 50 kids, one Ethereum
 // tx claims any number, and waiting times are live instead of "20–60 minutes".
 // Addresses come from the active deployment. The trust list is built from live reads (useTrustFacts), so it
 // says what's true of this deployment, not what we hope is true.

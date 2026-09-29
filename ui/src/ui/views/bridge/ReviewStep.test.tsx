@@ -199,9 +199,9 @@ describe('ReviewStep: Send stays off when it should', () => {
     expect(sendButton()).toBeDisabled()
   })
 
-  it('for more than 100 kids', async () => {
+  it('for more than 50 kids', async () => {
     renderReview({ ids: Array.from({ length: 101 }, (_, i) => i + 1) })
-    expect(await screen.findByText('Send up to 100 at a time. Take some out and send the rest after.')).toBeInTheDocument()
+    expect(await screen.findByText('Send up to 50 at a time. Take some out and send the rest after.')).toBeInTheDocument()
     expect(sendButton()).toBeDisabled()
   })
 })

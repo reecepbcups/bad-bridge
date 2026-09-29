@@ -41,7 +41,7 @@ describe('errorCopy', () => {
   })
 
   it('has plain copy for the send guards, and none of them could have sent anything', () => {
-    expect(errorCopy(new BridgeError('TooManyKids'), { action: 'send' })).toMatchObject({ body: expect.stringContaining('up to 100') as string, safe: true })
+    expect(errorCopy(new BridgeError('TooManyKids'), { action: 'send' })).toMatchObject({ body: expect.stringContaining('up to 50') as string, safe: true })
     expect(errorCopy(new BridgeError('FeeTooHigh'), { action: 'send' })).toMatchObject({ title: 'That fee looks wrong', safe: true })
     expect(errorCopy(new BridgeError('ClientFrozen'), { action: 'send' })).toMatchObject({ title: 'The bridge is stuck for now', safe: true })
     expect(errorCopy(new BridgeError('ZeroRecipient'), { action: 'send' }).body).not.toContain('escrow said no')
