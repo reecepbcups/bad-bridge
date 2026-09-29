@@ -190,11 +190,12 @@ export function SpeedUp({
             "Relayed. Ethereum's client got its update."
           ) : (
             <>
-              Status: <b>{skipState ? stateText(skipState) : 'checking…'}</b>.{' '}
-              {sentAt !== null && now - sentAt < EXPECTED_MS
-                ? `About ${countdown(EXPECTED_MS - Math.max(0, now - sentAt))} left. `
-                : 'Taking longer than usual, still watching. '}
-              Success or failure both mean the client updated.
+              <span className="nowrap">
+                Status: <strong>{skipState ? stateText(skipState) : 'checking…'}</strong>.{' '}
+                {sentAt !== null && now - sentAt < EXPECTED_MS
+                  ? `About ${countdown(EXPECTED_MS - Math.max(0, now - sentAt))} left.`
+                  : 'Taking longer than usual, still watching.'}
+              </span>
             </>
           )}
         </p>

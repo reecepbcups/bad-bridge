@@ -444,6 +444,22 @@ export function ProveFailure({ flow }: { flow: ProveFlow }) {
   }
 
   if (!failure) return null
+  const short = /insufficient balance ([\d.]+) PROVE for request cost ([\d.]+) PROVE/i.exec(failure.error.detail ?? '')
+  if (short || /insufficient balance/i.test(failure.error.detail ?? '')) {
+    return (
+      <div className="warn" role="alert">
+        <div>
+          <b>Not enough PROVE</b>
+          {short
+            ? `This proof costs ${short[2]} PROVE and your Succinct account has ${short[1]}. `
+            : "Your Succinct account doesn't have enough PROVE for this proof. "}
+          Deposit some, then try again.{' '}
+          <GetProveButton className="btn eth small">Get PROVE</GetProveButton>
+          {/* COPY: not enough PROVE at prove time */}
+        </div>
+      </div>
+    )
+  }
   if (notRegistered) return <RegisterProgramModal open={!dismissed} onClose={() => setDismissed(true)} />
   return (
     <ErrorNote
