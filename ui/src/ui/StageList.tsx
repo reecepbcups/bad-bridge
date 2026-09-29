@@ -16,6 +16,11 @@ export interface StageFacts {
   provingSince?: Date
 }
 
+// COPY: step 2 title while the client is behind
+const OUT_OF_SYNC = 'Ethereum out of sync'
+// COPY: step 3 title while the proof is being made
+const PROVING = 'Proving'
+
 /** Sightings this short say nothing about how long the proof takes, so no clock until then. */
 export const PROVING_QUIET_MS = 5 * 60_000
 
@@ -118,6 +123,7 @@ export function StageList({
     <ol className="stages">
       {items.map((item, i) => {
         const state = i < at && !current.includes(i) ? 'done' : current.includes(i) ? 'now' : ''
+        const outOfSync = i === 1 && state === 'now' && facts.blocksToGo !== undefined && facts.blocksToGo > 0
         return (
           <li key={JOURNEY[i]} className={state} aria-current={state === 'now' ? 'step' : undefined}>
             <span className="tick" aria-hidden="true">
@@ -125,7 +131,7 @@ export function StageList({
             </span>
             <span>
               <b>
-                {JOURNEY[i]}
+                {outOfSync ? OUT_OF_SYNC : i === 2 && state === 'now' ? PROVING : JOURNEY[i]}
                 {state && <span className="sr-only">{state === 'done' ? ' (done)' : ' (happening now)'}</span>}
               </b>
               <span className="d">{item.detail}</span>

@@ -24,6 +24,7 @@ import {
 import { registerProgram as registerProgramImpl, requestGroth16Proof as requestGroth16ProofImpl, type ProofRequestProgress, type SuccinctStage } from '../succinct/client'
 import type { DecodedGroth16Proof } from '../succinct/proof'
 import { bridgeAbi } from './abi'
+import { depositProve as depositProveImpl, ethUsdPrice as ethUsdPriceImpl, quoteProve as quoteProveImpl, swapEthForProve as swapEthForProveImpl, walletProveBalance as walletProveBalanceImpl } from './fundProve'
 import { ethChain } from './client'
 import { toEthError } from './errors'
 import { assertKidId, createEthReader, requireBridge } from './reader'
@@ -81,6 +82,16 @@ export interface EthWriterWithBatch extends EthWriter {
    * same connected wallet. Anyone can register any program — this isn't gated to whoever built it.
    */
   registerProgram(vkHash: Hex, vk: Uint8Array, elf: Uint8Array): Promise<void>
+  /** ETH the router wants for exactly `prove` PROVE (18 decimals) right now. */
+  quoteProve(prove: bigint): Promise<bigint>
+  /** USD per ETH right now, for display only. */
+  ethUsdPrice(): Promise<number>
+  /** PROVE held in the connected wallet, not the Succinct network balance. */
+  walletProveBalance(): Promise<bigint>
+  /** Buys exactly `prove` PROVE with ETH on Uniswap, into the connected wallet. Returns the tx hash. */
+  swapEthForProve(prove: bigint, options?: BatchOptions): Promise<Hex>
+  /** Deposits PROVE into the connected wallet's Succinct network account (one permit signature, one tx). */
+  depositProve(amount: bigint, options?: BatchOptions): Promise<Hex>
 }
 
 /** Splits requested ids into what can be claimed now, and why the rest can't. */
@@ -282,6 +293,47 @@ export function createEthWriter(deps: EthWriterDeps): EthWriterWithBatch {
         return await registerProgram(vkHash, vk, elf)
       } catch (e) {
         throw toEthError(e)
+      }
+    },
+    quoteProve: async (prove) => {
+      try {
+        return await quoteProveImpl(publicClient, prove)
+      } catch (e) {
+        throw toEthError(e)
+      }
+    },
+    ethUsdPrice: async () => {
+      try {
+        return await ethUsdPriceImpl(publicClient)
+      } catch (e) {
+        throw toEthError(e)
+      }
+    },
+    walletProveBalance: async () => {
+      try {
+        return await walletProveBalanceImpl(publicClient, address)
+      } catch (e) {
+        throw toEthError(e)
+      }
+    },
+    swapEthForProve: async (prove, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        return await swapEthForProveImpl(publicClient, await getWallet(), chain.id, prove, stage.report)
+      } catch (e) {
+        throw toEthError(e)
+      } finally {
+        stage.done()
+      }
+    },
+    depositProve: async (amount, options) => {
+      const stage = stageReporter(options?.onStage)
+      try {
+        return await depositProveImpl(publicClient, await getWallet(), chain.id, amount, stage.report)
+      } catch (e) {
+        throw toEthError(e)
+      } finally {
+        stage.done()
       }
     },
   }

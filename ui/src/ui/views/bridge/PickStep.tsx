@@ -142,26 +142,38 @@ function KidPicker() {
   const found = findKids(kids, query)
   const shown = found.slice(0, limit)
   const rest = found.length - shown.length
+  const foundIds = found.map((t) => t.tokenId)
+  const allPicked = foundIds.length > 0 && foundIds.every((id) => picked.includes(id))
+  // fills up to the send cap; clearing only drops what the search is showing
+  const toggleAll = () =>
+    update({ picked: allPicked ? picked.filter((id) => !foundIds.includes(id)) : [...new Set([...picked, ...foundIds])].slice(0, MAX_KIDS_PER_SEND) })
   return (
     <>
       {owned.error && <ErrorNote error={owned.error} action="read" onRetry={owned.refetch} live={false} />}
-      {kids.length > FIND_FROM && (
-        <div className="find">
-          <label className="hint" htmlFor={findId}>
-            Find a kid by number
-          </label>
-          <input
-            id={findId}
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="#…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      )}
+      <div className="find-row">
+        {kids.length > FIND_FROM && (
+          <div className="find">
+            <label className="hint" htmlFor={findId}>
+              Find a kid by number
+            </label>
+            <input
+              id={findId}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="#…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        )}
+        {found.length > 1 && (
+          <button type="button" className="btn ghost small" onClick={toggleAll}>
+            {allPicked ? 'Clear all' : 'Select all'}
+          </button>
+        )}
+      </div>
       {found.length === 0 ? (
         <p className="muted" role="status">
           No kid #{query.replace(/[#\s]/g, '')} in this wallet.

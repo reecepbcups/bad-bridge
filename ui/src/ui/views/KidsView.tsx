@@ -91,10 +91,20 @@ export function KidsView({ address, mode }: { address?: string; mode: KidsMode }
       ? 'My Eth kids'
       : `Eth kids for ${shortAddress(target ?? '')}`
   useTitle(title)
+  const opensea = crossingView ? null : deployment.explorer.openseaCollection()
 
   return (
     <Card>
-      <h2 tabIndex={-1}>{title}</h2>
+      {opensea ? (
+        <div className="row start">
+          <h2 tabIndex={-1}>{title}</h2>
+          <ExtLink className="btn ghost small" href={opensea}>
+            OpenSea
+          </ExtLink>
+        </div>
+      ) : (
+        <h2 tabIndex={-1}>{title}</h2>
+      )}
       <p className="lede">
         {crossingView
           ? 'Kids on their way to Ethereum. Close this tab if you like, they will be waiting here.'

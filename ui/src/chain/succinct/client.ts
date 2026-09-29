@@ -34,6 +34,10 @@ const GRPC_NOT_FOUND = 5
  * during proving, not by this ceiling — it's a worst-case bound, same as an Ethereum gas limit. */
 const DEFAULT_GAS_LIMIT = 1_000_000_000n
 const DEFAULT_CYCLE_LIMIT = 1_000_000_000_000n
+/** What a request reserves is base_fee + max_price_per_pgu * this, so 1e9 reserved 0.86 PROVE for a proof that
+ * costs about 0.335. A real proof of 8 to 10 kids used 2.76M PGUs (measured 2026-09-28), so this leaves room and
+ * keeps the reserve near the base fee. Too low and the request comes back unfulfillable. */
+const REQUEST_GAS_LIMIT = 4_000_000n
 
 /** Ports sp1-sdk's calculate_timeout_from_gas_limit: 5 min floor, 4 hour ceiling, gas_limit/2M in between. */
 function calculateTimeoutSecs(gasLimit: bigint): bigint {
@@ -325,7 +329,7 @@ export async function requestGroth16Proof(opts: RequestGroth16ProofOptions): Pro
       stdinUri: artifactUri,
       deadline,
       cycleLimit: DEFAULT_CYCLE_LIMIT,
-      gasLimit: DEFAULT_GAS_LIMIT,
+      gasLimit: REQUEST_GAS_LIMIT,
       whitelist,
       params,
     })

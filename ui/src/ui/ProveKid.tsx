@@ -1,13 +1,16 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useState } from 'react'
 import { useBridge } from '../chain/context'
-import type { ProveStage } from '../chain/prove'
+import { PROVE_NEEDED, type ProveStage } from '../chain/prove'
+import { isLive } from '../config/deployments'
 import type { ProofRequestProgress } from '../chain/succinct/client'
 import type { BridgeError, EthAddress, KidId } from '../chain/types'
 import type { Hex } from 'viem'
 import { ConnectButton } from './Connect'
 import { ErrorNote } from './ErrorNote'
 import { ExtLink } from './ExtLink'
-import { kidList } from './format'
+import { GetProveButton } from './GetProve'
+import { clockTime, kidList } from './format'
 import { Sheet } from './Sheet'
 import { useToast, type Toast } from './Toasts'
 
@@ -29,6 +32,15 @@ const REQUEST_STATUS_LABEL: Readonly<Record<ProofRequestProgress['fulfillmentSta
 /** Live status of the running Succinct proof request, with a link to watch it on their explorer. */
 export function ProveProgress({ flow }: { flow: ProveFlow }) {
   const request = flow.request
+  if (!flow.pending && flow.saved) {
+    const { at, requestId } = flow.saved
+    return (
+      <p className="hint" role="status">
+        Proving, started at {clockTime(new Date(at), new Date())}. Press "Resume proving" to finish it.{' '}
+        {requestId && <ExtLink href={`${PROVE_REQUEST_URL}/${requestId}`}>Watch on Succinct</ExtLink>}
+      </p>
+    )
+  }
   if (!flow.pending || !request) return null
   return (
     <p className="hint">
@@ -38,9 +50,6 @@ export function ProveProgress({ flow }: { flow: ProveFlow }) {
   )
 }
 
-/** Where the connected wallet manages its Succinct network PROVE balance. */
-const PROVE_ACCOUNT_URL = 'https://explorer.succinct.xyz/account'
-
 /** The toast once one or more kids' proofs land on Ethereum. `ids` is whichever ones actually made it into
  * the batch (see ProveKidsResult.proved) — can be fewer than what was asked for. */
 export function provenToast(ids: readonly KidId[]): Toast {
@@ -48,6 +57,39 @@ export function provenToast(ids: readonly KidId[]): Toast {
     tone: 'ok',
     title: `Proved ${ids.length > 3 ? `${ids.length} kids` : kidList(ids)}`,
     body: 'The proof landed on Ethereum. It can be claimed now.',
+  }
+}
+
+const SELF_PROVING_KEY = (chainId: string) => `bad-bridge:self-proving:${chainId}`
+/** A reload kills the run, so a remembered proof this old is given up on. */
+const SELF_PROVING_TTL_MS = 60 * 60_000
+
+/** A "Prove it yourself" that was started and hasn't finished. Survives a reload. */
+export interface SelfProving {
+  ids: readonly KidId[]
+  at: number
+  /** Known once Succinct has taken the request; lets a reload pick it up instead of paying again. */
+  requestId?: Hex
+}
+
+function loadSelfProving(chainId: string): SelfProving | null {
+  try {
+    const raw = window.localStorage.getItem(SELF_PROVING_KEY(chainId))
+    const v = raw ? (JSON.parse(raw) as Partial<SelfProving>) : null
+    if (!v || !Array.isArray(v.ids) || typeof v.at !== 'number' || Date.now() - v.at >= SELF_PROVING_TTL_MS) return null
+    const requestId = typeof v.requestId === 'string' ? parseRequestId(v.requestId) : null
+    return { ids: v.ids.filter((n): n is KidId => Number.isInteger(n)), at: v.at, ...(requestId && { requestId }) }
+  } catch {
+    return null
+  }
+}
+
+function saveSelfProving(chainId: string, value: SelfProving | null): void {
+  try {
+    if (value) window.localStorage.setItem(SELF_PROVING_KEY(chainId), JSON.stringify(value))
+    else window.localStorage.removeItem(SELF_PROVING_KEY(chainId))
+  } catch {
+    // remembering is a nicety
   }
 }
 
@@ -60,6 +102,10 @@ export interface ProveFlow {
   /** The Succinct request while proving, with the network's own status for it. */
   request: ProofRequestProgress | null
   failure: { error: BridgeError; ids: readonly KidId[] } | null
+  /** Started earlier (maybe before a reload) and not finished. */
+  saved: SelfProving | null
+  /** Picks the saved proof back up: submits its Succinct request if it has one, else starts over. */
+  resume: () => Promise<void>
 }
 
 // COPY: prove-my-kids progress (button label and status line)
@@ -74,8 +120,10 @@ const STAGE_LABEL: Readonly<Record<ProveStage, string>> = {
 
 /** `onProved` runs after a batch lands, so the page can re-read where the kids are now. */
 export function useProveFlow(onProved?: () => void): ProveFlow {
-  const { proveKid } = useBridge()
+  const { proveKid, deployment } = useBridge()
+  const chainId = deployment.hub.chainId
   const toast = useToast()
+  const [saved, setSaved] = useState<SelfProving | null>(() => loadSelfProving(chainId))
   const [proving, setProving] = useState<readonly KidId[]>([])
   const [stage, setStage] = useState<ProveStage | null>(null)
   const [request, setRequest] = useState<ProofRequestProgress | null>(null)
@@ -87,19 +135,60 @@ export function useProveFlow(onProved?: () => void): ProveFlow {
     setStage(null)
     setRequest(null)
     setFailure(null)
+    const mark = (next: SelfProving) => {
+      setSaved(next)
+      saveSelfProving(chainId, next)
+    }
+    const started: SelfProving = { ids, at: Date.now() }
+    mark(started)
     try {
-      const result = await proveKid.proveKids(ids, { expectedRecipients, onStage: setStage, onProgress: setRequest })
+      const result = await proveKid.proveKids(ids, {
+        expectedRecipients,
+        onStage: setStage,
+        onProgress: (p) => {
+          setRequest(p)
+          if (p.requestId !== started.requestId) {
+            started.requestId = p.requestId
+            mark({ ...started })
+          }
+        },
+      })
       toast(provenToast(result.proved))
       onProved?.()
     } catch (e) {
       setFailure({ error: e as BridgeError, ids })
     } finally {
+      setSaved(null)
+      saveSelfProving(chainId, null)
       setProving([])
       setStage(null)
       setRequest(null)
     }
   }
-  return { run, pending: proving.length > 0, proving, stage, request, failure }
+
+  const resume = async () => {
+    if (!proveKid || !saved) return
+    const { ids, requestId } = saved
+    if (!requestId) return run(ids)
+    setProving(ids)
+    setStage(null)
+    setRequest(null)
+    setFailure(null)
+    try {
+      const { txHash } = await proveKid.submitRequest(requestId, { onStage: setStage, onProgress: setRequest })
+      toast({ tone: 'ok', title: 'Proof submitted', body: `The proof landed on Ethereum (${txHash.slice(0, 10)}…). Ready kids can be claimed now.` })
+      onProved?.()
+    } catch (e) {
+      setFailure({ error: e as BridgeError, ids })
+    } finally {
+      setSaved(null)
+      saveSelfProving(chainId, null)
+      setProving([])
+      setStage(null)
+      setRequest(null)
+    }
+  }
+  return { run, pending: proving.length > 0, proving, stage, request, failure, saved, resume }
 }
 
 const REQUEST_ID_RE = /0x[0-9a-fA-F]{64}/
@@ -234,7 +323,7 @@ export function ProveBalanceNote() {
   return (
     <p className="hint">
       Proving costs a little $PROVE on Succinct's network — looks like this wallet doesn't have any yet.{' '}
-      <ExtLink href={PROVE_ACCOUNT_URL}>Get PROVE</ExtLink>
+      <GetProveButton />
     </p>
   )
 }
@@ -264,6 +353,7 @@ export function ProveButton({
     )
   }
   const mine = ids.some((id) => flow.proving.includes(id))
+  const saved = flow.saved !== null && ids.some((id) => flow.saved?.ids.includes(id))
   return (
     <button
       type="button"
@@ -272,10 +362,12 @@ export function ProveButton({
       disabled={ethWallet.wrongChain === true}
       aria-disabled={flow.pending || undefined}
       onClick={() => {
-        if (!flow.pending) void flow.run(ids, expectedRecipients)
+        if (flow.pending) return
+        if (saved) void flow.resume()
+        else void flow.run(ids, expectedRecipients)
       }}
     >
-      {mine && flow.stage ? STAGE_LABEL[flow.stage] : children}
+      {mine && flow.stage ? STAGE_LABEL[flow.stage] : saved ? 'Resume proving' : children}
     </button>
   )
 }
@@ -352,6 +444,22 @@ export function ProveFailure({ flow }: { flow: ProveFlow }) {
   }
 
   if (!failure) return null
+  const short = /insufficient balance ([\d.]+) PROVE for request cost ([\d.]+) PROVE/i.exec(failure.error.detail ?? '')
+  if (short || /insufficient balance/i.test(failure.error.detail ?? '')) {
+    return (
+      <div className="warn" role="alert">
+        <div>
+          <b>Not enough PROVE</b>
+          {short
+            ? `This proof costs ${short[2]} PROVE and your Succinct account has ${short[1]}. `
+            : "Your Succinct account doesn't have enough PROVE for this proof. "}
+          Deposit some, then try again.{' '}
+          <GetProveButton className="btn eth small">Get PROVE</GetProveButton>
+          {/* COPY: not enough PROVE at prove time */}
+        </div>
+      </div>
+    )
+  }
   if (notRegistered) return <RegisterProgramModal open={!dismissed} onClose={() => setDismissed(true)} />
   return (
     <ErrorNote
@@ -361,4 +469,35 @@ export function ProveFailure({ flow }: { flow: ProveFlow }) {
       tokenId={failure.ids.length === 1 ? failure.ids[0] : undefined}
     />
   )
+}
+
+export type ProveReady =
+  | { status: 'skip' }
+  | { status: 'connect' }
+  | { status: 'loading' }
+  | { status: 'short'; balance: bigint; inWallet: bigint; refetch: () => void }
+  | { status: 'ok'; balance: bigint }
+
+/**
+ * Whether the connected Ethereum wallet has enough PROVE in its Succinct account to pay for a proof. 'skip'
+ * where there is nothing to prove against (the demo, or a deployment with no bridge yet).
+ */
+export function useProveReady(): ProveReady {
+  const { deployment, proveKid, ethWallet } = useBridge()
+  const address = ethWallet.status === 'connected' ? ethWallet.address : undefined
+  const q = useQuery({
+    queryKey: ['prove-ready', address],
+    enabled: Boolean(proveKid && address),
+    queryFn: async () => {
+      const kid = proveKid as NonNullable<typeof proveKid>
+      const [network, inWallet] = await Promise.all([kid.proveBalance(), kid.walletProveBalance().catch(() => 0n)])
+      return { network, inWallet }
+    },
+    refetchInterval: 30_000,
+  })
+  if (deployment.demo || !isLive(deployment)) return { status: 'skip' }
+  if (!proveKid || !address) return { status: 'connect' }
+  if (q.data === undefined) return { status: 'loading' }
+  if (q.data.network >= PROVE_NEEDED) return { status: 'ok', balance: q.data.network }
+  return { status: 'short', balance: q.data.network, inWallet: q.data.inWallet, refetch: () => void q.refetch() }
 }

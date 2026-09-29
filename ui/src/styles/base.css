@@ -35,12 +35,12 @@ a { color: var(--eth-ink); text-decoration-thickness: 2px; text-underline-offset
 /* the one big sketched card */
 .card {
   border: 2.5px solid var(--ink); border-radius: var(--wobble);
-  padding: 26px 24px; display: grid; gap: 18px;
+  padding: 30px 28px; display: grid; gap: 24px;
   box-shadow: 4px 5px 0 var(--ink);
   background: var(--paper);
 }
 h2 { font: 700 34px/1 var(--display); margin: 0; text-wrap: balance; }
-.lede { margin: -8px 0 0; color: var(--ink-soft); max-width: 58ch; }
+.lede { margin: -12px 0 0; color: var(--ink-soft); max-width: 58ch; }
 .hl { background: linear-gradient(transparent 55%, var(--sun) 55%, var(--sun) 88%, transparent 88%); color: var(--sun-ink); padding: 0 2px; }
 /* on the chalkboard the half-highlight leaves dark text on dark paper: fill the whole word instead */
 @media (prefers-color-scheme: dark) {
@@ -89,18 +89,18 @@ input[type="text"] {
 }
 input[aria-invalid="true"] { border-color: var(--crayon); }
 input::placeholder { color: var(--ink-soft); opacity: 1; }
-.hint { font: 600 13px/1.4 var(--body); color: var(--ink-soft); }
+.hint { font: 600 13px/1.5 var(--body); color: var(--ink-soft); }
 .hint.bad { color: var(--crayon-ink); }
 .hint.heads-up { color: var(--ink); border-left: 3px solid var(--crayon); padding-left: 10px; }
 .hint.heads-up b { font-weight: 800; }
 .warn {
   display: flex; gap: 12px; align-items: flex-start;
-  border: 2px dashed var(--crayon); border-radius: var(--wobble-2); padding: 12px 14px;
+  border: 2px dashed var(--crayon); border-radius: var(--wobble-2); padding: 18px 20px; line-height: 1.45;
 }
 .warn svg { flex: none; width: 34px; height: 34px; color: var(--crayon); }
-.warn b { font: 700 20px/1 var(--display); display: block; margin-bottom: 2px; }
-.check { display: flex; gap: 10px; align-items: center; font-weight: 700; cursor: pointer; }
-.warn + .check { margin-top: -6px; }
+.warn b { font: 700 20px/1 var(--display); display: block; margin-bottom: 8px; }
+.check { display: flex; gap: 12px; align-items: center; font-weight: 700; cursor: pointer; padding: 6px 4px; }
+.warn + .check { margin-top: 0; }
 
 /* an error in kid words: crayon triangle, headline, body, details */
 .oops {

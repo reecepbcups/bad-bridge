@@ -1,11 +1,11 @@
 /* Bridge flow styles, ported from the mockup: pick grid, review, crossing scene. */
 
 /* kid grid */
-.kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; }
+.kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 16px; }
 .kid {
   position: relative; cursor: pointer; text-align: center; color: var(--ink);
   border: 2px solid var(--line); border-radius: var(--wobble-2);
-  padding: 10px 8px 8px; background: none; font: inherit;
+  padding: 14px 10px 12px; background: none; font: inherit;
   transition: transform .12s, border-color .12s;
 }
 .kid:hover:not(:disabled) { transform: rotate(-1.5deg); border-color: var(--ink); }
@@ -57,10 +57,11 @@
 .heights { margin: 0; }
 
 /* pick: find box, and the count + Next bar that stays in reach under a long grid */
-.find { display: grid; gap: 6px; max-width: 260px; }
+.find { display: grid; gap: 6px; max-width: 260px; flex: 1; }
+.find-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; padding-block: 6px; }
 .pick-bar {
   position: sticky; bottom: 0; z-index: 2;
-  margin-inline: -12px; padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  margin-inline: -12px; padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
   background: var(--paper); border-top: 2.5px dashed var(--line);
 }
 .pick-bar .cap { color: var(--crayon-ink); font-weight: 800; }
@@ -76,3 +77,9 @@
   .scene text.more { font-size: 30px; }
   .pick-bar { margin-inline: -8px; padding-inline: 8px; }
 }
+
+/* the send steps stay visible but dead until there's PROVE for the proof */
+.prove-locked { opacity: .45; filter: grayscale(1); pointer-events: none; user-select: none; }
+.prove-gate { margin-bottom: 20px; padding: 16px; }
+.prove-gate > div { display: grid; gap: 10px; }
+.prove-gate-act { display: block; }

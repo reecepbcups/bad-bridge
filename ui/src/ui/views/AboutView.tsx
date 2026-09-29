@@ -7,6 +7,7 @@ import { useClaimEstimate, useConfigSanity, useHealth, useNudge, useTrustFacts, 
 import { formatEth } from '../Claim'
 import { Card } from '../chrome/Card'
 import { ConnectButton } from '../Connect'
+import { CostList } from '../CostList'
 import { ErrorNote } from '../ErrorNote'
 import { errorCopy } from '../errors'
 import { ExtLink } from '../ExtLink'
@@ -75,6 +76,9 @@ export function AboutView() {
 
         <h3>Why you can trust it</h3>
         <TrustList facts={facts} failed={trust.error !== null} />
+
+        <h3>What it costs</h3>
+        <CostList />
 
         <h3>Good to know</h3>
         <div className="faq">
@@ -436,8 +440,9 @@ function UpdateClient() {
         {stage ? UPDATE_LABEL[stage](walletName) : 'Update Client'}
       </button>
       <p className="hint">
-        Sends 0.01 ATOM to your own Ethereum address, plus a small network fee. Relayers watch for ATOM transfers
-        like this one, so it can help Ethereum catch up sooner. No guarantees.
+        Sends 0.001 ATOM to your own Ethereum address, plus a small network fee. Relayers watch for ATOM transfers
+        like this one, so it can help Ethereum catch up sooner. It takes about 5
+        minutes after you submit. No guarantees.
         {/* COPY: update-client hint */}
       </p>
       {nudge.error && (

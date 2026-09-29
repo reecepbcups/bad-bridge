@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useBridge } from '../chain/context'
 import type { EthAddress, SendStage } from '../chain/types'
 import { useNudge } from '../trips/hooks'
@@ -24,6 +24,58 @@ function skipExplorerUrl(chainId: string, txHash: string): string {
 }
 
 const SKIP_POLL_MS = 5_000
+/** How long a relayer usually takes after the transfer lands. Shown as a countdown, not a promise. */
+const EXPECTED_MS = 5 * 60_000
+
+const SENT_KEY = (chainId: string) => `bad-bridge:update-client:${chainId}`
+/** A remembered update this old is stale news, so a refresh starts clean. */
+const SENT_TTL_MS = 60 * 60_000
+
+interface Sent {
+  tx: string
+  at: number
+}
+
+function loadSent(chainId: string): Sent | null {
+  try {
+    const raw = window.localStorage.getItem(SENT_KEY(chainId))
+    const v = raw ? (JSON.parse(raw) as Partial<Sent>) : null
+    if (v && typeof v.tx === 'string' && typeof v.at === 'number' && Date.now() - v.at < SENT_TTL_MS) return { tx: v.tx, at: v.at }
+  } catch {
+    // storage blocked or unreadable: same as nothing remembered
+  }
+  return null
+}
+
+function saveSent(chainId: string, sent: Sent): void {
+  try {
+    window.localStorage.setItem(SENT_KEY(chainId), JSON.stringify(sent))
+  } catch {
+    // remembering is a nicety
+  }
+}
+
+/** "STATE_COMPLETED_SUCCESS" as "completed success". */
+function stateText(state: string): string {
+  return state.replace(/^STATE_/, '').replaceAll('_', ' ').toLowerCase()
+}
+
+/** "4:07", counting down to 0:00. */
+function countdown(msLeft: number): string {
+  const s = Math.max(0, Math.ceil(msLeft / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** Wall-clock ms, ticking every second while `active`. */
+function useSecondClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [active])
+  return now
+}
 
 /** Skip Go's relay state for the transfer, polled until it settles. */
 function useSkipState(chainId: string, txHash: string | null, enabled: boolean): string | null {
@@ -65,18 +117,22 @@ export function SpeedUp({
   const { deployment, hubWallet } = useBridge()
   const toast = useToast()
   const [reached, setReached] = useState<SendStage | null>(null)
-  const [sentTx, setSentTx] = useState<string | null>(null)
+  const [sent, setSent] = useState<Sent | null>(() => loadSent(deployment.hub.chainId))
+  const sentTx = sent?.tx ?? null
+  const sentAt = sent?.at ?? null
   const nudge = useNudge({ onStage: setReached })
   const sending = nudge.status === 'pending'
   const walletName = hubWallet.walletName ?? 'your wallet'
   const skipState = useSkipState(deployment.hub.chainId, sentTx, !deployment.demo)
+  const relayed = settled(skipState)
+  const now = useSecondClock(sentTx !== null && !relayed)
   const stage: SendStage | null = sending ? (nudge.stage ?? 'simulating') : null
 
   if (disabledReason) {
     return (
       <div className="speed-up">
         <button type="button" className="btn ghost small" disabled aria-disabled="true">
-          Speed it up
+          Update Ethereum IBC client
         </button>
         <p className="hint">{disabledReason}</p>
       </div>
@@ -100,7 +156,9 @@ export function SpeedUp({
     setReached(null)
     try {
       const result = await nudge.run(recipient)
-      setSentTx(result.txHash)
+      const next = { tx: result.txHash, at: Date.now() }
+      setSent(next)
+      saveSent(deployment.hub.chainId, next)
       toast({
         tone: 'ok',
         title: 'Sent a speed-up transfer',
@@ -117,20 +175,29 @@ export function SpeedUp({
   return (
     <div className="speed-up">
       <button type="button" className="btn ghost small" disabled={sending} aria-disabled={sending || undefined} onClick={() => void onNudge()}>
-        {stage ? NUDGE_LABEL[stage](walletName) : 'Speed it up'}
+        {stage ? NUDGE_LABEL[stage](walletName) : 'Update Ethereum IBC client'}
       </button>
       <p className="hint">
-        Sends 0.01 ATOM to the address your {kidWord(n)} {n === 1 ? 'is' : 'are'} heading to, plus a small network
-        fee. Relayers watch for ATOM transfers like this one, so it can help Ethereum catch up sooner. No
-        guarantees.
+        Sends 0.001 ATOM to the address your {kidWord(n)} {n === 1 ? 'is' : 'are'} heading to, plus a small network
+        fee. Relayers watch for ATOM transfers like this one, so it can help Ethereum catch up sooner. It takes
+        about 5 minutes after you submit. No guarantees.
         {/* COPY: speed-up hint */}
       </p>
       {sentTx && (
         <p className="hint" role="status">
           <ExtLink href={skipExplorerUrl(deployment.hub.chainId, sentTx)}>Track it on Skip Go</ExtLink> ·{' '}
-          {settled(skipState)
-            ? "Relayed. Ethereum's client got its update."
-            : 'Waiting for a relayer. Success or failure both mean the client updated.'}
+          {relayed ? (
+            "Relayed. Ethereum's client got its update."
+          ) : (
+            <>
+              <span className="nowrap">
+                Status: <strong>{skipState ? stateText(skipState) : 'checking…'}</strong>.{' '}
+                {sentAt !== null && now - sentAt < EXPECTED_MS
+                  ? `About ${countdown(EXPECTED_MS - Math.max(0, now - sentAt))} left.`
+                  : 'Taking longer than usual, still watching.'}
+              </span>
+            </>
+          )}
         </p>
       )}
       {nudge.error && (

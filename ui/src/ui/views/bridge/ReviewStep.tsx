@@ -8,6 +8,7 @@ import { sharedHost } from '../../../config/host'
 import { navigate } from '../../../router'
 import { useConfigSanity, useHealth, useSendEstimate, useSendKids } from '../../../trips/hooks'
 import { ConnectButton } from '../../Connect'
+import { CostList } from '../../CostList'
 import { ErrorNote } from '../../ErrorNote'
 import { errorCopy } from '../../errors'
 import { formatFee, kidWord } from '../../format'
@@ -208,7 +209,7 @@ export function ReviewStep() {
           {msg && (
             <p className="hint">
               <b>Check your wallet:</b> it will show <span className="mono">msg: {msg}</span>
-              {n > 1 ? ' for each kid' : ''}. It should match.
+              {n > 1 ? ' for each kid' : ''}. It should match. Look for it in {walletName} on the send, as the msg.
               {/* COPY: wallet msg check */}
             </p>
           )}
@@ -261,6 +262,8 @@ export function ReviewStep() {
         <ErrorNote error={contract.error} action="read" onRetry={contract.refetch} retryLabel="Check the address again" />
       )}
 
+      <CostList />
+
       <div className="warn">
         <WarnIcon />
         <div>
@@ -295,7 +298,7 @@ export function ReviewStep() {
           />
           {mightHaveLanded && (
             <p className="hint">
-              Before sending again, check <a href="#/kids">My kids</a> in case it went through.
+              Before sending again, check <a href="#/crossing">Crossing</a> in case it went through.
             </p>
           )}
         </>

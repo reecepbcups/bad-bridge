@@ -9,8 +9,10 @@ import { BridgeError, MAX_KIDS_PER_SEND, type EthAddress, type HubAddress, type 
 export const MAX_U32 = 4_294_967_295
 export const MSG_EXECUTE_CONTRACT = '/cosmwasm.wasm.v1.MsgExecuteContract'
 export const MSG_TRANSFER = '/ibc.applications.transfer.v1.MsgTransfer'
-/** 0.01 ATOM, in uatom: the speed-up nudge's fixed amount. */
-export const NUDGE_AMOUNT_UATOM = '10000'
+/** 0.001 ATOM, in uatom: the speed-up nudge's fixed amount. */
+export const NUDGE_AMOUNT_UATOM = '1000'
+/** Tx memo on the nudge, so anyone looking at it on an explorer knows what it's for. */
+export const NUDGE_MEMO = 'Updating IBCv2 Ethereum Client for Cosmos Hub with BadBridge'
 /** How long the nudge's MsgTransfer stays valid before the Hub refunds it back to the sender. */
 export const NUDGE_TIMEOUT_MS = 10 * 60_000
 

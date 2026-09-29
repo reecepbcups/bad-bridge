@@ -79,7 +79,7 @@ describe('golden vector', () => {
 })
 
 describe('buildNudgeMsg', () => {
-  it('builds a v2 MsgTransfer: client id as source_channel, 0.01 ATOM, plain 0x receiver, no timeout height', () => {
+  it('builds a v2 MsgTransfer: client id as source_channel, 0.001 ATOM, plain 0x receiver, no timeout height', () => {
     const msg = buildNudgeMsg(REECE, '08-wasm-1369', 'uatom', RECIPIENT, 1_000_000)
     expect(msg.typeUrl).toBe(MSG_TRANSFER)
     expect(msg.value).toEqual({
